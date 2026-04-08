@@ -146,3 +146,5 @@ filter=status[neq]:DONE,dueAt[lt]:2024-03-01T00:00:00.000Z
 5. **Search is title-only** — No body content search is available.
 6. **GraphQL search returns IDs only** — Follow up with `GET /rest/tasks?filter=id[in]:[id1,id2]` to fetch full records.
 7. **URL-encode GET filter params** — Filter strings contain special characters (`[`, `]`, `:`) that break manually constructed URLs. Use URL encoding when making requests (e.g., `curl -G --data-urlencode "filter=..."`).
+8. **REST response wraps results under a named key** — `.data` is NOT a plain array. It's an object keyed by the resource name: `{ "data": { "tasks": [...] }, "pageInfo": {...}, "totalCount": N }`. Iterate with `.data.tasks[]`, not `.data[]`.
+9. **`depth=1` on tasks includes `taskTargets` inline** — Each task in the response will contain a `taskTargets[]` array with `personId`, `companyId`, and `opportunityId`. This is more efficient than querying `/rest/taskTargets` separately when you need related record IDs for a batch of tasks.

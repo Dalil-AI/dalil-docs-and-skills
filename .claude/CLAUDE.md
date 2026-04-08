@@ -51,6 +51,15 @@ The two doc types serve different audiences:
 - **Sorting**: `order_by=field[DescNullsLast]`
 - **Depth**: `0` = record only, `1` = + relations, `2` = + nested relations
 
+### REST Response Shape
+List responses are **not** a plain array. The structure is:
+```json
+{ "data": { "<resourceName>": [...] }, "pageInfo": {}, "totalCount": N }
+```
+For example, tasks → `.data.tasks[]`, people → `.data.people[]`. Never use `.data[]` directly.
+
+> **Note:** The resource key matches the REST path segment — `/rest/people` → `.data.people[]`, `/rest/tasks` → `.data.tasks[]`. It is NOT the grammatically pluralised entity name (i.e. NOT `persons`).
+
 ### Pipelines (Dynamic Entities)
 Pipeline endpoints are not fixed. Each pipeline has a unique `namePlural` (e.g., `/rest/startupFundraisings`). Always:
 1. Discover pipelines first: `GET /rest/metadata/pipelines`
@@ -64,12 +73,41 @@ GET /rest/metadata/objects/standard-id/{standardId}
 ```
 Standard IDs are documented in `apiDocs/metadata.md`. Custom field values follow the same type conventions as standard fields.
 
+### Discovering Enum Values
+The `/rest/metadata/objects/standard-id/{standardId}` endpoint is unreliable (returns 400 for standard objects). Use GraphQL introspection instead:
+```
+POST /graphql
+{ "__type(name: \"PersonPeopleTagEnum\") { enumValues { name } }" }
+```
+### Fetching Task Relations Efficiently
+`GET /rest/tasks?depth=1` includes `taskTargets[]` inline on each task (with `personId`, `companyId`, `opportunityId`). This is more efficient than querying `/rest/taskTargets` separately when you already have a list of tasks and need their related record IDs.
+
+### `id[in]` Filter and Deleted Records
+When using `filter=id[in]:[uuid1,uuid2,...]`, deleted or soft-deleted records are silently omitted from the response — no error is returned. The result count may be less than the number of IDs supplied.
+
 ### System Fields (Read-Only)
 Never set these on create/update: `id`, `createdAt`, `updatedAt`, `deletedAt`, `position`, `createdBy`, `groupId`, `visibilityLevel`, `score`, `lastContactAt`
 
+## Dalil API Key
+
+```
+Put Dalil API key here
+```
+
+### How to create a new API key
+
+If the user needs to generate one:
+
+1. Navigate to **Settings** (bottom of the left navigation bar).
+2. Click **Integrations → APIs**.
+3. Click **Create New API Key**.
+4. Enter a name and expiration period, then click **Save**.
+5. Copy the API key and store it somewhere safe — it will not be shown again.
+6. Return to the same page, paste the key into the text box, and click **Launch** to access the full OpenAPI documentation.
+
 ## Using Skills Files
 
-Before executing any API operation from the skills files, confirm the user has provided a Bearer token (API key). If not already supplied, ask for it — no request can succeed without it.
+Before executing any API operation from the skills files, check the **Dalil API Key** section above. If a token has been pasted there, use it directly. Otherwise, ask the user for it and also offer: *"If you don't have an API key yet, I can walk you through creating one — just let me know."* Show the instructions above if they say yes.
 
 ## Skills Files
 

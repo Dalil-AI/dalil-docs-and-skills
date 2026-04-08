@@ -186,6 +186,9 @@ filter=companyId[is]:NULL
 6. **Email filter uses nested path** — Use `emails.primaryEmail[ilike]:value`, not `primaryEmail[ilike]:value`.
 7. **GraphQL `limit` must be hardcoded, not a variable** — Passing `$limit: Int` as a variable causes a type error. Inline it directly: `limit: 5`.
 8. **`depth=1` responses are large (~42KB for a list)** — Even at depth=1, list responses with multiple records are very large and may exceed tool read limits. Prefer fetching records individually via `GET /rest/people/{id}?depth=1` and extracting only the fields you need, rather than batch-fetching with `filter=id[in]:[...]&depth=1`.
+13. **List response key is `.data.people[]`, not `.data.persons[]`** — The key matches the REST path segment (`/rest/people` → `.data.people[]`). Using `.data.persons[]` will cause a KeyError.
+14. **`id[in]` silently omits deleted records** — If some IDs belong to soft-deleted records, they are omitted from the response without an error. The result count may be less than the number of IDs supplied.
+15. **`peopleTag` enum values are workspace-specific** — Valid values differ per workspace. Use GraphQL introspection to discover them: `{ __type(name: "PersonPeopleTagEnum") { enumValues { name } } }`.
 9. **URL-encode GET filter params** — Filter strings contain special characters (`[`, `]`, `:`) that break manually constructed URLs. Use URL encoding when making requests (e.g., `curl -G --data-urlencode "filter=..."`).
 10. **`id[in]` filter requires bracket syntax** — The array value must be wrapped in brackets: `id[in]:[uuid1,uuid2]`. Passing a bare comma-separated list (`id[in]:uuid1,uuid2`) causes a 500 error.
 11. **GraphQL `searchInput` is a plain string, not an object** — Pass the search term as a `String!` variable. Do NOT pass it as `{query: "...", includedObjectNameSingulars: [...]}` — that causes a type error. The `includedObjectNameSingulars` and `limit` are separate top-level arguments on the `search` field.

@@ -272,6 +272,18 @@ filter=city[ilike]:san francisco
 
 8. **`depth=1` list responses are large.** A single `depth=1` list call can return ~42KB+ per page. If you need depth on specific records, prefer fetching them individually via `GET /rest/people/{id}?depth=1`.
 
+9. **List response key is `.data.people[]`, not `.data.persons[]`.** The key matches the REST path segment. Using `.data.persons[]` will cause a key error.
+
+10. **`id[in]` silently omits deleted records.** Deleted or soft-deleted records are omitted from the response without an error. The result count may be less than the number of IDs supplied.
+
+11. **`peopleTag` enum values are workspace-specific.** Valid options differ per workspace. Discover them via GraphQL introspection:
+    ```bash
+    curl -X POST "https://app.usedalil.ai/graphql" \
+      -H "Authorization: Bearer YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"query": "{ __type(name: \"PersonPeopleTagEnum\") { enumValues { name } } }"}'
+    ```
+
 ---
 
 ## See Also

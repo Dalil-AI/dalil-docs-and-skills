@@ -208,14 +208,15 @@ curl -X POST "https://app.usedalil.ai/rest/taskTargets" \
 
 ### Find All Tasks for a Person
 
+The `/rest/taskTargets` list endpoint does **not** support `filter`. Use `depth=1` on the person record instead — linked tasks are returned inline:
+
 ```bash
-curl -G "https://app.usedalil.ai/rest/taskTargets" \
+curl -G "https://app.usedalil.ai/rest/people/person-uuid" \
   -H "Authorization: Bearer YOUR_API_KEY" \
-  --data-urlencode "filter=personId[eq]:person-uuid" \
   --data-urlencode "depth=1"
 ```
 
-The response includes the full task object when `depth >= 1`.
+Alternatively, fetch tasks at `depth=1` using a title or status filter — each task includes a `taskTargets[]` array containing the linked `personId`, `companyId`, and `opportunityId`.
 
 ---
 
