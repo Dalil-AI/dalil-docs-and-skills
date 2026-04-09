@@ -9,6 +9,7 @@ description: Manage people/contacts in Dalil AI CRM — create, read, update, de
 
 - **Base URL:** `https://app.usedalil.ai`
 - **Auth:** `Authorization: Bearer {apiKey}`
+- **API Key:** `{PASTE_YOUR_API_KEY_HERE}` — replace with your Dalil API key before making any requests. You can also set this once in `.claude/CLAUDE.md` so it's available across all skills.
 - **Content-Type:** `application/json` *(POST/PATCH requests only)*
 - **Accept:** `application/json` *(GET requests)*
 - **Resource path:** `/rest/people`
@@ -174,6 +175,69 @@ filter=score[gt]:5
 
 # People without a company
 filter=companyId[is]:NULL
+```
+
+## Fetching All Entities Associated with a Person
+
+To retrieve everything linked to a person (messages, notes, tasks, opportunities, calendar events), use a two-step approach:
+
+### Step 1 — Get relation IDs via depth=1 on the person
+
+```
+GET /rest/people/{id}?depth=1
+```
+
+This returns relation arrays such as `noteTargets`, `taskTargets`, `pointOfContactForOpportunities`, `messageParticipants`, and `calendarEventParticipants`. **However**, nested objects within these arrays (e.g., `.message`, `.calendarEvent`) are `null` at this depth — you only get the junction record IDs.
+
+Extract what you need with jq:
+```bash
+curl -s "https://app.usedalil.ai/rest/people/{id}?depth=1" \
+  -H "Authorization: Bearer {apiKey}" | jq '{
+    noteIds: [.data.person.noteTargets[].noteId],
+    taskIds: [.data.person.taskTargets[].taskId],
+    opportunities: [.data.person.pointOfContactForOpportunities[] | {id, name, stage, amount: .amount.amountMicros}],
+    messageParticipantCount: (.data.person.messageParticipants | length),
+    calendarEventCount: (.data.person.calendarEventParticipants | length)
+  }'
+```
+
+### Step 2 — Fetch notes and tasks individually
+
+Use the IDs from step 1:
+```
+GET /rest/notes/{noteId}?depth=0
+GET /rest/tasks/{taskId}?depth=0
+```
+Note body is in `.data.note.bodyV2.markdown`. Task body is in `.data.task.bodyV2.markdown`.
+
+### Step 3 — Fetch messages via messageParticipants endpoint
+
+**Do not** try to get message content from the person's `messageParticipants` array at depth=1 — the nested `.message` object will be null. Instead, query the `messageParticipants` resource directly with `depth=1`, filtered by `personId`:
+
+```bash
+curl -s -G "https://app.usedalil.ai/rest/messageParticipants" \
+  --data-urlencode "filter=personId[eq]:{personId}" \
+  --data-urlencode "depth=1" \
+  --data-urlencode "limit=100" \
+  -H "Authorization: Bearer {apiKey}" | jq '[
+    .data.messageParticipants[] | {
+      role,
+      handle,
+      receivedAt: .message.receivedAt,
+      subject: .message.subject,
+      text: .message.text,
+      messageId: .message.id
+    }
+  ] | sort_by(.receivedAt)'
+```
+
+This returns the full message content (subject, text, receivedAt, role, handle) for all messages the person participated in. The `handle` field indicates the channel address (email or "incoming"/"outgoing" for WhatsApp). Use `limit=100` and paginate with `starting_after` if needed.
+
+### Calendar events
+
+Calendar event details are also null at depth=1 on the person. Use a similar filter approach on `calendarEventParticipants` if needed:
+```
+GET /rest/calendarEventParticipants?filter=personId[eq]:{personId}&depth=1
 ```
 
 ## Gotchas

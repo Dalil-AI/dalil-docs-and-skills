@@ -15,7 +15,8 @@ apiDocs/
   *.md              # Human-readable API reference guides
 .claude/
   skills/
-    *.md            # Self-contained skills files for AI agents/automation
+    {skill-name}/
+      SKILL.md      # Self-contained skills files for AI agents/automation
 ```
 
 The two doc types serve different audiences:
@@ -91,7 +92,7 @@ Never set these on create/update: `id`, `createdAt`, `updatedAt`, `deletedAt`, `
 ## Dalil API Key
 
 ```
-Put Dalil API key here
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNDY3NWRlNy05ZDZhLTQxNjMtYjI4ZS00M2ZiMGRjMmYwNWUiLCJ0eXBlIjoiQVBJX0tFWSIsIndvcmtzcGFjZUlkIjoiMTQ2NzVkZTctOWQ2YS00MTYzLWIyOGUtNDNmYjBkYzJmMDVlIiwid29ya3NwYWNlTWVtYmVySWQiOiI1M2FmMWIzYi00NjM5LTRiZjQtYTc3Yi02ZmU3MWVlZTAyNzgiLCJ1c2VyV29ya3NwYWNlSWQiOiJlNjM4MjYxOC1hMzIyLTRmZTItYmVmZi03MTY5Mzg3MjAxNzgiLCJpYXQiOjE3NzU1NjA0NDYsImV4cCI6NDkyOTE2MDQ0NSwianRpIjoiZWE2ZjNhYmMtZjk0Yi00ZWFjLTgxNzMtZWUwNjdkMWFlOTc4In0.kLvx5emL8G4pdyi5-ZkbXhCY5yO6fvAcDxgZvVg6CtI
 ```
 
 ### How to create a new API key
@@ -127,14 +128,14 @@ Use the table below to select the right skill file for a given operation:
 
 | Skill file | Name | When to use |
 |---|---|---|
-| `.claude/skills/person.md` | `person` | Creating, searching, updating, or deleting **people/contacts** |
-| `.claude/skills/company.md` | `company` | Creating, searching, updating, or deleting **companies/organizations** |
-| `.claude/skills/opportunity.md` | `opportunity` | Creating, searching, updating, or deleting **deals/opportunities** |
-| `.claude/skills/note.md` | `note` | Creating, searching, updating, or deleting **notes** |
-| `.claude/skills/task.md` | `task` | Creating, searching, updating, or deleting **tasks/to-dos** |
-| `.claude/skills/pipeline.md` | `pipeline` | Working with **dynamic CRM pipelines** (discover endpoints first) |
-| `.claude/skills/note-relation.md` | `note-relation` | **Attaching notes** to people, companies, or opportunities |
-| `.claude/skills/task-relation.md` | `task-relation` | **Attaching tasks** to people, companies, or opportunities |
+| `.claude/skills/person/SKILL.md` | `person` | Creating, searching, updating, or deleting **people/contacts** |
+| `.claude/skills/company/SKILL.md` | `company` | Creating, searching, updating, or deleting **companies/organizations** |
+| `.claude/skills/opportunity/SKILL.md` | `opportunity` | Creating, searching, updating, or deleting **deals/opportunities** |
+| `.claude/skills/note/SKILL.md` | `note` | Creating, searching, updating, or deleting **notes** |
+| `.claude/skills/task/SKILL.md` | `task` | Creating, searching, updating, or deleting **tasks/to-dos** |
+| `.claude/skills/pipeline/SKILL.md` | `pipeline` | Working with **dynamic CRM pipelines** (discover endpoints first) |
+| `.claude/skills/note-relation/SKILL.md` | `note-relation` | **Attaching notes** to people, companies, or opportunities |
+| `.claude/skills/task-relation/SKILL.md` | `task-relation` | **Attaching tasks** to people, companies, or opportunities |
 
 **Selection rules:**
 - For note/task operations on a record, use `note` or `task` to create the item, then `note-relation` or `task-relation` to link it.

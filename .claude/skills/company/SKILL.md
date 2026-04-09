@@ -9,6 +9,7 @@ description: Manage companies/organizations in Dalil AI CRM — create, read, up
 
 - **Base URL:** `https://app.usedalil.ai`
 - **Auth:** `Authorization: Bearer {apiKey}`
+- **API Key:** `{PASTE_YOUR_API_KEY_HERE}` — replace with your Dalil API key before making any requests. You can also set this once in `.claude/CLAUDE.md` so it's available across all skills.
 - **Content-Type:** `application/json` *(POST/PATCH requests only)*
 - **Accept:** `application/json` *(GET requests)*
 - **Resource path:** `/rest/companies`
