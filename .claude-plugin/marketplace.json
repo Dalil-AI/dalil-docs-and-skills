@@ -1,6 +1,6 @@
 {
   "name": "dalil-marketplace",
-  "description": "Dalil AI plugins for Claude Code — customer GTM/CRM onboarding",
+  "description": "Dalil AI plugins for Claude Code — customer Sales OS onboarding",
   "owner": {
     "name": "Dalil AI",
     "url": "https://app.usedalil.ai"
@@ -9,12 +9,12 @@
     {
       "name": "dalil",
       "source": "./plugins/dalil",
-      "description": "Interview a customer and generate their Dalil GTM/CRM Operating System HTML",
-      "version": "1.0.0",
+      "description": "Interview a customer and generate their Dalil Sales OS HTML",
+      "version": "1.0.1",
       "author": { "name": "Dalil AI", "url": "https://app.usedalil.ai" },
       "homepage": "https://app.usedalil.ai",
       "repository": "https://github.com/Dalil-AI/dalil-docs-and-skills",
-      "keywords": ["gtm", "crm", "onboarding", "sales"]
+      "keywords": ["sales-os", "crm", "onboarding", "sales"]
     }
   ]
 }

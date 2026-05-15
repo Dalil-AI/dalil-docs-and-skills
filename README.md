@@ -6,7 +6,7 @@ It serves three audiences:
 
 - **Developers** building custom integrations, automations, or applications on top of Dalil AI
 - **AI agents** (Claude, GPT, etc.) that need structured, action-ready references to operate the CRM on a user's behalf
-- **Dalil customers** onboarding through Claude Code — a plugin interviews you and generates your GTM/CRM Operating System
+- **Dalil customers** onboarding through Claude Code — a plugin interviews you and generates your Sales OS
 
 ---
 
@@ -127,7 +127,7 @@ For operations that span multiple entities (e.g., create a person and attach a n
 
 ## Claude Code Plugin: CRM Onboarding
 
-New Dalil customers can onboard directly inside [Claude Code](https://claude.com/claude-code). The `dalil` plugin (in [`plugins/dalil/`](plugins/dalil/)) runs a guided interview about your business, ICP, outreach strategy, pipeline, and sequences, then generates a single self-contained **GTM/CRM Operating System** file — `gtm-os.html`. The Dalil team uses that file to build out your CRM, workflows, and outreach sequences.
+New Dalil customers can onboard directly inside [Claude Code](https://claude.com/claude-code). The `dalil` plugin (in [`plugins/dalil/`](plugins/dalil/)) runs a guided interview about your business, ICP, outreach strategy, pipeline, and sequences, then generates a single self-contained **Sales OS** file — `sales-os.html`. The Dalil team uses that file to build out your CRM, workflows, and outreach sequences.
 
 ### Install
 
@@ -147,7 +147,7 @@ Run these inside Claude Code:
 ### What you get
 
 - **A guided interview** — 5 phases (business overview, ICP & targeting, outreach strategy, pipeline & CRM, sequences & messaging). Answer in your own words; the agent asks follow-ups. Type `done` at any point to generate with what you've provided so far.
-- **`gtm-os.html`** in your working directory — open it in any browser. It covers strategy, ICP & personas, CRM structure, workflows, outreach sequences, and target lists.
+- **`sales-os.html`** in your working directory — open it in any browser. It covers strategy, ICP & personas, CRM structure, workflows, outreach sequences, and target lists.
 - **Refinement** — re-run `/dalil:crm-onboarding` in a folder that already has the file to update it instead of starting over.
 
 > Requires [Claude Code](https://claude.com/claude-code). The interview and generation run on your own Claude session — no API key to manage. The first time you add the marketplace, Claude Code will ask you to trust it.

@@ -1,7 +1,7 @@
 {
   "name": "dalil",
-  "version": "1.0.0",
-  "description": "Interview a customer and generate their Dalil GTM/CRM Operating System HTML — used by the Dalil team to build the customer's CRM during onboarding",
+  "version": "1.0.1",
+  "description": "Interview a customer and generate their Dalil Sales OS — used by the Dalil team to build the customer's CRM during onboarding",
   "author": { "name": "Dalil AI", "url": "https://app.usedalil.ai" },
   "homepage": "https://app.usedalil.ai",
   "repository": "https://github.com/Dalil-AI/dalil-docs-and-skills"
