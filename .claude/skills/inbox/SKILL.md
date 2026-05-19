@@ -1,6 +1,6 @@
 ---
 name: dalil-message-search
-description: Search and retrieve messages from a Dalil workspace — fetch recent threads by channel, or keyword-search across message subject and body. Use when the user asks about LinkedIn/email/WhatsApp messages received or sent, wants to find a specific message, or needs a summary of recent inbox activity.
+description: Search and retrieve messages from a Dalil workspace — fetch recent threads by channel, keyword-search across message subject and body, find threads with no reply, and create drafts for matching threads. Use when the user asks about LinkedIn/email/WhatsApp messages received or sent, wants to find a specific message, needs a summary of recent inbox activity, or wants to draft follow-up messages for threads that haven't received a reply.
 ---
 
 # Dalil AI: Message Search Skills
@@ -29,11 +29,11 @@ Many scenarios need both endpoints saved to temp files first:
 
 ```bash
 curl -s -G "https://app.usedalil.ai/rest/messageParticipants" \
-  --data-urlencode "depth=1" --data-urlencode "limit=100" \
+  --data-urlencode "depth=1" --data-urlencode "limit=500" \
   -H "Authorization: Bearer {apiKey}" > /tmp/participants.json
 
 curl -s -G "https://app.usedalil.ai/rest/messageChannelMessageAssociations" \
-  --data-urlencode "depth=1" --data-urlencode "limit=200" \
+  --data-urlencode "depth=1" --data-urlencode "limit=500" \
   -H "Authorization: Bearer {apiKey}" > /tmp/channels.json
 ```
 
@@ -323,6 +323,86 @@ curl -s -G "https://app.usedalil.ai/rest/messageParticipants" \
 
 ---
 
+### 12. Find threads with a keyword in my last outgoing message + no reply + draft a follow-up (three-step)
+
+**Scenario:** "Find messages from the last 10 days that include 'get back to you soon' where I haven't received a reply, and draft 'Want to follow up?' for each."
+
+The logic: last message in thread is OUTGOING (no reply received) AND the snippet contains the keyword AND it was within the time window. Then for each matching thread, POST a draft via the REST API.
+
+**Step 1 — Fetch data**
+
+```bash
+curl -s -G "https://app.usedalil.ai/rest/messageParticipants" \
+  --data-urlencode "depth=1" --data-urlencode "limit=500" \
+  -H "Authorization: Bearer {apiKey}" > /tmp/participants.json
+
+curl -s -G "https://app.usedalil.ai/rest/messageChannelMessageAssociations" \
+  --data-urlencode "depth=1" --data-urlencode "limit=500" \
+  -H "Authorization: Bearer {apiKey}" > /tmp/channels.json
+```
+
+**Step 2 — Find matching threads, save threadIds**
+
+```bash
+jq -n \
+  --slurpfile p /tmp/participants.json \
+  --slurpfile c /tmp/channels.json \
+  --arg since "2026-05-09T00:00:00.000Z" \
+  --arg kw "get back to you soon" \
+  '
+  ($c[0].data.messageChannelMessageAssociations
+    | map({key: .messageId, value: {direction: .direction, channelType: .messageChannel.type}})
+    | from_entries) as $channelMap |
+  $p[0].data.messageParticipants
+  | group_by(.message.messageThreadId)
+  | map(
+      sort_by(.message.receivedAt) | last |
+      {
+        threadId: .message.messageThreadId,
+        lastReceivedAt: .message.receivedAt,
+        subject: .message.subject,
+        snippet: (.message.text // "" | gsub("[\\n\\r\\t]"; " ") | .[:200]),
+        from: .displayName,
+        direction: ($channelMap[.message.id].direction // "unknown"),
+        channelType: ($channelMap[.message.id].channelType // "unknown")
+      }
+    )
+  | map(select(
+      .direction == "OUTGOING" and
+      .lastReceivedAt >= $since and
+      (.snippet | ascii_downcase | contains($kw))
+    ))
+  | sort_by(.lastReceivedAt) | reverse
+' > /tmp/matches.json
+
+cat /tmp/matches.json
+```
+
+Show the user the matched threads first and confirm before creating drafts.
+
+**Step 3 — Create a draft for each matched thread**
+
+```bash
+jq -r '.[].threadId' /tmp/matches.json | while read threadId; do
+  curl -s -X POST "https://app.usedalil.ai/rest/messageDrafts" \
+    -H "Authorization: Bearer {apiKey}" \
+    -H "Content-Type: application/json" \
+    -d "{\"messageThreadId\": \"$threadId\", \"draftedText\": \"Want to follow up?\"}" | \
+    jq '{created: .data.createMessageDraft.id, threadId: .data.createMessageDraft.messageThreadId}'
+done
+```
+
+**Key notes for this scenario:**
+- `since` date = today minus 10 days (compute from `date -u -v-10d +%Y-%m-%dT%H:%M:%SZ` on macOS or `date -u -d '10 days ago' +%Y-%m-%dT%H:%M:%SZ` on Linux)
+- The keyword check is on `snippet` (the last outgoing message text) — `OUTGOING` + keyword together confirm it's the user's own message
+- Always show matches to the user before Step 3 — drafts are created per-thread and visible in the inbox immediately
+- If a draft already exists for a thread, POST creates a second one — check `/rest/messageDrafts?filter=messageThreadId[eq]:{threadId}` first if idempotency matters
+- `draftedText` accepts plain text or HTML — the RichTextComposer in the UI renders it as HTML, so plain text is safe here
+
+*Example prompts: "Find messages from last 10 days where I said 'get back to you soon' and haven't heard back, draft a follow-up for each", "I have threads where I said I'd follow up — write a follow-up draft for them"*
+
+---
+
 ## Quick select() Reference (for two-call scenarios)
 
 | What you want | select() condition |
@@ -334,6 +414,7 @@ curl -s -G "https://app.usedalil.ai/rest/messageParticipants" \
 | Email only | `+ .channelType == "email"` |
 | Last msg contains keyword | `+ (.snippet \| ascii_downcase \| contains("keyword"))` |
 | Cold threads (gone silent) | `.messageCount > 1 and .lastReceivedAt < "cutoff-date"` |
+| Keyword in my last msg + no reply | `.direction == "OUTGOING" and .lastReceivedAt >= $since and (.snippet \| ascii_downcase \| contains("keyword"))` |
 
 ---
 
@@ -362,4 +443,5 @@ curl -s -G "https://app.usedalil.ai/rest/messageParticipants" \
 8. **`.message.text` can be null** — always use `// ""` fallback
 9. **Keyword matching: use `ascii_downcase | contains("lowercase keyword")`** for case-insensitive search
 10. **ISO 8601 date strings compare correctly with `>=` in jq** — no conversion needed
-11. **`messageCount` in two-call scenarios is always 1** — it counts participants per last-message, not messages per thread. Use the `group_by` length for real message count (see scenario 9/10)
+11. **Always use `limit=500` for `messageChannelMessageAssociations`** — the association count grows faster than participants (multiple channels per message); using `limit=200` silently truncates and causes `direction` to resolve as `"unknown"`, dropping valid matches
+12. **`messageCount` in two-call scenarios is always 1** — it counts participants per last-message, not messages per thread. Use the `group_by` length for real message count (see scenario 9/10)
