@@ -2,10 +2,11 @@
 
 This repository contains everything you need to build on top of **[Dalil AI](https://app.usedalil.ai)** — a CRM platform for managing contacts, companies, deals, tasks, and notes.
 
-It serves two audiences:
+It serves three audiences:
 
 - **Developers** building custom integrations, automations, or applications on top of Dalil AI
 - **AI agents** (Claude, GPT, etc.) that need structured, action-ready references to operate the CRM on a user's behalf
+- **Dalil customers** onboarding through Claude Code — a plugin interviews you and generates your Sales OS
 
 ---
 
@@ -14,6 +15,7 @@ It serves two audiences:
 ```
 apiDocs/          # Human-readable API reference for developers
 .claude/skills/   # Condensed skill files designed for AI agents
+plugins/          # Claude Code plugin — customer GTM/CRM onboarding
 ```
 
 ### `apiDocs/`
@@ -120,6 +122,35 @@ The `.claude/skills/` files are designed to be passed directly into an AI agent'
 The agent will use the skill file to know exactly which endpoints to call, how to format the request, and what to watch out for.
 
 For operations that span multiple entities (e.g., create a person and attach a note), provide both the `person.md` and `note.md` + `note-relation.md` skill files.
+
+---
+
+## Claude Code Plugin: CRM Onboarding
+
+New Dalil customers can onboard directly inside [Claude Code](https://claude.com/claude-code). The `dalil` plugin (in [`plugins/dalil/`](plugins/dalil/)) runs a guided interview about your business, ICP, outreach strategy, pipeline, and sequences, then generates a single self-contained **Sales OS** file — `sales-os.html`. The Dalil team uses that file to build out your CRM, workflows, and outreach sequences.
+
+### Install
+
+Run these inside Claude Code:
+
+```bash
+# 1. Add this repo as a plugin marketplace
+/plugin marketplace add Dalil-AI/dalil-docs-and-skills
+
+# 2. Install the plugin
+/plugin install dalil@dalil-marketplace
+
+# 3. Start the onboarding interview
+/dalil:crm-onboarding
+```
+
+### What you get
+
+- **A guided interview** — 5 phases (business overview, ICP & targeting, outreach strategy, pipeline & CRM, sequences & messaging). Answer in your own words; the agent asks follow-ups. Type `done` at any point to generate with what you've provided so far.
+- **`sales-os.html`** in your working directory — open it in any browser. It covers strategy, ICP & personas, CRM structure, workflows, outreach sequences, and target lists.
+- **Refinement** — re-run `/dalil:crm-onboarding` in a folder that already has the file to update it instead of starting over.
+
+> Requires [Claude Code](https://claude.com/claude-code). The interview and generation run on your own Claude session — no API key to manage. The first time you add the marketplace, Claude Code will ask you to trust it.
 
 ---
 
