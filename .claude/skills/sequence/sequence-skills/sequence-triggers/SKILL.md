@@ -164,4 +164,4 @@ Use `CREATE_SEQUENCE_PERSON` step in sequence A to enroll the person in sequence
 2. **START step is required** — sequences without a START step will fail validation. Always create START as the first step.
 3. **No global trigger type** — unlike workflows, there's no `trigger.type` field on the sequence. Enrollment method is external to the sequence definition.
 4. **`senderAssignStatus`** — after activating senders, check `sequence.senderAssignStatus === "COMPLETED"` before enrolling people. If `FAILED` or `PENDING`, senders aren't ready.
-5. **Pause settings in `settings.pauseOnReply`** — this is the most commonly needed flag. Always ask the user if they want auto-pause on reply.
+5. **Sequence settings live in `sequence-settings/SKILL.md`** — for all `SequenceLimitSettings` fields including `pauseOnReply`, `businessDaysOnly`, threading, and workflow trigger integrations.

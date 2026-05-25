@@ -15,6 +15,8 @@ Runs in Phase B (after lifecycle-agent has created the sequence). Do not invoke 
 
 ## Inputs (from orchestrator)
 
+For the full `sequenceSettings` schema, see: **`sequence-skills/sequence-settings/SKILL.md`**
+
 ```json
 {
   "apiKey": "...",

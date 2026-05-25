@@ -116,6 +116,7 @@ Before spawning sub-agents, produce a **build plan** and show it to the user for
     "activeWindow": { "days": [1,2,3,4,5], "window": { "start": "09:00", "end": "17:00" } },
     "timezone": "Europe/Paris",
     "isEmailSingleThread": true
+    // Full schema: sequence-skills/sequence-settings/SKILL.md
   },
   "metadataNeeded": {
     "platformsNeeded": ["LINKEDIN", "EMAIL"],
