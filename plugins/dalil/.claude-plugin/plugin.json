@@ -1,8 +1,55 @@
 {
   "name": "dalil",
-  "version": "1.0.1",
-  "description": "Interview a customer and generate their Dalil Sales OS — used by the Dalil team to build the customer's CRM during onboarding",
+  "version": "1.1.0",
+  "description": "Dalil AI CRM skills for Claude Code — manage contacts, companies, deals, tasks, notes, pipelines, and inbox; run the GTM onboarding interview and generate a personalized Sales OS",
   "author": { "name": "Dalil AI", "url": "https://app.usedalil.ai" },
   "homepage": "https://app.usedalil.ai",
-  "repository": "https://github.com/Dalil-AI/dalil-docs-and-skills"
+  "repository": "https://github.com/Dalil-AI/dalil-docs-and-skills",
+  "skills": [
+    {
+      "name": "person",
+      "path": "skills/person/SKILL.md",
+      "description": "Manage people/contacts in Dalil AI CRM — create, read, update, delete, search, and list person records including name, email, phone, LinkedIn, city, job title, and company associations."
+    },
+    {
+      "name": "company",
+      "path": "skills/company/SKILL.md",
+      "description": "Manage companies/organizations in Dalil AI CRM — create, read, update, delete, search, and list company records including name, domain, LinkedIn, address, employee count, and annual revenue."
+    },
+    {
+      "name": "opportunity",
+      "path": "skills/opportunity/SKILL.md",
+      "description": "Manage sales opportunities/deals in Dalil AI CRM — create, read, update, delete, search, and list opportunity records including deal name, amount (in micros), stage, close date, and point-of-contact associations."
+    },
+    {
+      "name": "note",
+      "path": "skills/note/SKILL.md",
+      "description": "Manage notes in Dalil AI CRM — create, read, update, delete, search, and list note records with rich text body (markdown/blocknote). Use note-relation to attach notes to people, companies, or opportunities."
+    },
+    {
+      "name": "note-relation",
+      "path": "skills/note-relation/SKILL.md",
+      "description": "Link notes to CRM entities (people, companies, opportunities) in Dalil AI — create, read, update, delete, and list noteTarget records that associate a note with one or more target records."
+    },
+    {
+      "name": "task",
+      "path": "skills/task/SKILL.md",
+      "description": "Manage tasks/to-dos in Dalil AI CRM — create, read, update, delete, search, and list task records including title, due date, status, and assignee. Use task-relation to attach tasks to people, companies, or opportunities."
+    },
+    {
+      "name": "task-relation",
+      "path": "skills/task-relation/SKILL.md",
+      "description": "Link tasks to CRM entities (people, companies, opportunities) in Dalil AI — create, read, update, delete, and list taskTarget records that associate a task with one or more target records."
+    },
+    {
+      "name": "pipeline",
+      "path": "skills/pipeline/SKILL.md",
+      "description": "Manage dynamic CRM pipelines in Dalil AI — discover available pipelines, retrieve their fields and stages, and create/update/delete pipeline records. Endpoints are dynamic (namePlural varies per pipeline); always discover before operating."
+    },
+    {
+      "name": "inbox",
+      "path": "skills/inbox/SKILL.md",
+      "description": "Search and retrieve messages from a Dalil workspace — fetch recent threads by channel, keyword-search across message subject and body, find threads with no reply, and create drafts for matching threads."
+    }
+  ]
 }

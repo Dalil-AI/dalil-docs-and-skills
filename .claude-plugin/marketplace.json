@@ -1,6 +1,6 @@
 {
   "name": "dalil-marketplace",
-  "description": "Dalil AI plugins for Claude Code — customer Sales OS onboarding",
+  "description": "Dalil AI plugins for Claude Code — CRM skills for contacts, companies, deals, tasks, notes, pipelines, inbox, and GTM onboarding",
   "owner": {
     "name": "Dalil AI",
     "url": "https://app.usedalil.ai"
@@ -9,12 +9,25 @@
     {
       "name": "dalil",
       "source": "./plugins/dalil",
-      "description": "Interview a customer and generate their Dalil Sales OS HTML",
-      "version": "1.0.1",
+      "description": "Dalil AI CRM skills — manage contacts, companies, deals, tasks, notes, pipelines, and inbox; run the GTM onboarding interview and generate a personalized Sales OS",
+      "version": "1.1.0",
       "author": { "name": "Dalil AI", "url": "https://app.usedalil.ai" },
       "homepage": "https://app.usedalil.ai",
       "repository": "https://github.com/Dalil-AI/dalil-docs-and-skills",
-      "keywords": ["sales-os", "crm", "onboarding", "sales"]
+      "keywords": [
+        "crm",
+        "sales",
+        "contacts",
+        "companies",
+        "deals",
+        "tasks",
+        "notes",
+        "pipeline",
+        "inbox",
+        "sales-os",
+        "onboarding",
+        "gtm"
+      ]
     }
   ]
 }
