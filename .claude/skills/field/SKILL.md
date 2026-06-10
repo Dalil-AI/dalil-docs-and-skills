@@ -1,6 +1,6 @@
 ---
 name: field
-description: Create, read, update, and delete custom fields on Dalil AI objects and pipelines — covers all field types (TEXT, NUMBER, BOOLEAN, CURRENCY, SELECT, MULTI_SELECT, DATE, DATE_TIME, EMAILS, PHONES, LINKS, FULL_NAME, ADDRESS, RATING, ARRAY, RAW_JSON, UUID, RICH_TEXT_V2), naming rules, type-specific settings, SELECT options format, composite default values, and Object vs Pipeline scoping.
+description: Create, read, update, and delete custom fields on Dalil AI objects and pipelines — covers all field types (TEXT, NUMBER, BOOLEAN, CURRENCY, SELECT, MULTI_SELECT, DATE, DATE_TIME, EMAILS, PHONES, LINKS, FULL_NAME, ADDRESS, RATING, ARRAY, RAW_JSON, UUID, RICH_TEXT_V2, ACTOR), naming rules, type-specific settings, SELECT options format, composite default values, and Object vs Pipeline scoping.
 ---
 
 # Dalil AI: Field Creation API Skills
@@ -712,6 +712,32 @@ Formatted rich text (BlockNote + Markdown). Use for long-form content.
 
 ---
 
+### ACTOR
+
+Tracks who performed an action — stores source, name, and context. Used for assigned user or owner fields.
+
+| Property | Value |
+|----------|-------|
+| Default icon | `IconUsers` |
+| `defaultValue` | `{ "source": "'MANUAL'", "name": "'System'", "context": {} }` |
+| `isNullable` | `true` |
+| `settings` | Not required |
+
+**Important:** `actor` is a reserved name on any object that already has an actor field (e.g., Person). Use a scoped name like `pipelineActor`, `assignedActor` to avoid conflicts.
+
+```json
+{
+  "type": "ACTOR",
+  "name": "pipelineActor",
+  "label": "Actor",
+  "icon": "IconUsers",
+  "description": "Use for assigned user or owner.",
+  "pipelineId": "4f45acb6-b824-4bc7-855f-15b8ad8f25dc"
+}
+```
+
+---
+
 ## Object vs Pipeline Field Creation
 
 | Aspect | Object Field | Pipeline Field |
@@ -787,6 +813,7 @@ When `isUnique: true`:
 | ARRAY | `IconList` |
 | RAW_JSON | `IconBraces` |
 | UUID | `IconKey` |
+| ACTOR | `IconUsers` |
 
 ---
 
@@ -824,7 +851,7 @@ When `isUnique: true`:
 
 14. **Composite sub-property names are reserved** — adding an `address` field reserves `addressCity`, `addressStreet1`, etc. as names in that object. Adding `currency` reserves `amountMicros`, `currencyCode`.
 
-15. **`defaultValue: "now"` for DATE/DATE_TIME means auto-fill** — the string `"now"` is a special sentinel that auto-populates with the current date/time when a record is created. It is not a literal date value.
+15. **`defaultValue: "now"` for DATE/DATE_TIME means auto-fill, but only works on objects — not pipelines.** On object fields, `"now"` auto-populates with the current date/time when a record is created. On pipeline fields, sending `"now"` causes a `"Cannot return null for non-nullable field Field.id"` server crash. Always use `null` as the default for DATE/DATE_TIME fields on pipelines.
 
 16. **Non-nullable fields require `defaultValue`** — if you set `isNullable: false`, you must also provide a valid `defaultValue`. The API will reject non-nullable fields without a default.
 
