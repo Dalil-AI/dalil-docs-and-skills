@@ -1,6 +1,6 @@
 ---
 name: field
-description: Create, read, update, and delete custom fields on Dalil AI objects and pipelines — covers all field types (TEXT, NUMBER, BOOLEAN, CURRENCY, SELECT, MULTI_SELECT, DATE, DATE_TIME, EMAILS, PHONES, LINKS, FULL_NAME, ADDRESS, RATING, ARRAY, RAW_JSON, UUID, RICH_TEXT_V2, ACTOR), naming rules, type-specific settings, SELECT options format, composite default values, and Object vs Pipeline scoping.
+description: Create, update, and delete custom fields on Dalil AI objects and pipelines — covers all field types (TEXT, NUMBER, BOOLEAN, CURRENCY, SELECT, MULTI_SELECT, DATE, DATE_TIME, EMAILS, PHONES, LINKS, FULL_NAME, ADDRESS, RATING, ARRAY, RAW_JSON, UUID, RICH_TEXT_V2, ACTOR), naming rules, type-specific settings, SELECT options format, composite default values, Object vs Pipeline scoping, update constraints (name/type are immutable, options replace-all semantics), and delete safety rules (system fields, relation fields, irreversibility).
 ---
 
 # Dalil AI: Field Creation API Skills
@@ -856,6 +856,130 @@ When `isUnique: true`:
 16. **Non-nullable fields require `defaultValue`** — if you set `isNullable: false`, you must also provide a valid `defaultValue`. The API will reject non-nullable fields without a default.
 
 17. **`pipelineId` field: omit entirely for object fields** — do not send `"pipelineId": null`. Omit the key from the payload altogether.
+
+---
+
+## Updating a Field
+
+### Endpoint
+
+```http
+PATCH /rest/metadata/fields/{fieldId} HTTP/1.1
+Host: api.usedalil.ai
+Authorization: Bearer {apiKey}
+Content-Type: application/json
+```
+
+To find a field's ID: `GET /rest/metadata/fields?filter=objectMetadataId[eq]:{objectId}` (or use `pipelineId` for pipeline fields) and scan for the field by `name`.
+
+### What can be updated
+
+| Property | Updatable | Notes |
+|----------|-----------|-------|
+| `label` | Yes | Safe to change — display only |
+| `description` | Yes | Safe to change |
+| `icon` | Yes | Safe to change |
+| `defaultValue` | Yes | Does not backfill existing records |
+| `options` | Yes | SELECT/MULTI_SELECT only — see rules below |
+| `isActive` | Yes | Set `false` to disable without deleting |
+| `settings` | Yes | NUMBER: decimals and type |
+| `name` | **No** | Immutable after creation |
+| `type` | **No** | Immutable after creation |
+| `objectMetadataId` | **No** | Cannot move a field between objects |
+
+### Example — rename label and change description
+
+```json
+PATCH /rest/metadata/fields/abc12345-...
+
+{
+  "label": "New Label",
+  "description": "Updated description"
+}
+```
+
+### Example — update SELECT options
+
+Send the **full** options array, including existing options you want to keep. Options are replaced entirely, not merged.
+
+```json
+PATCH /rest/metadata/fields/abc12345-...
+
+{
+  "options": [
+    { "id": "existing-option-uuid", "label": "Low", "value": "LOW", "color": "gray", "position": 0 },
+    { "id": "existing-option-uuid-2", "label": "Medium", "value": "MEDIUM", "color": "orange", "position": 1 },
+    { "id": "existing-option-uuid-3", "label": "High", "value": "HIGH", "color": "red", "position": 2 },
+    { "label": "Critical", "value": "CRITICAL", "color": "pink", "position": 3 }
+  ]
+}
+```
+
+> **Include `id` for existing options to preserve them.** If you omit the `id`, the platform treats it as a new option. Omitting an existing option from the array removes it.
+
+### Response
+
+```json
+{
+  "data": {
+    "updateOneField": {
+      "id": "abc12345-...",
+      "label": "New Label",
+      "description": "Updated description",
+      "updatedAt": "2025-06-11T00:00:00.000Z"
+    }
+  }
+}
+```
+
+### Update gotchas
+
+- **`name` and `type` are immutable** — the API will ignore or reject attempts to change them. If the name or type is wrong, you must delete and recreate the field.
+- **Changing `defaultValue` does not backfill** — existing records keep their current values. Only new records will use the new default.
+- **SELECT/MULTI_SELECT: always send the full options array** — partial updates are not supported. If you only send new options, existing options are deleted.
+- **Fetch existing option IDs before updating** — use `GET /rest/metadata/fields/{id}` to retrieve the current `options` array (with `id` values) before PATCHing, so you can include the IDs and preserve existing options.
+- **Disabling a field (`isActive: false`) hides it from the UI** but preserves all data. Re-enable with `isActive: true`.
+
+---
+
+## Deleting a Field
+
+### Endpoint
+
+```http
+DELETE /rest/metadata/fields/{fieldId} HTTP/1.1
+Host: api.usedalil.ai
+Authorization: Bearer {apiKey}
+```
+
+### Finding the field ID
+
+If you don't have the field ID, fetch the object's fields first:
+
+```http
+GET /rest/metadata/fields?filter=objectMetadataId[eq]:{objectId} HTTP/1.1
+```
+
+Scan the response for the field by `name`, then copy its `id`.
+
+### Response
+
+```json
+{
+  "data": {
+    "deleteOneField": {
+      "id": "abc12345-..."
+    }
+  }
+}
+```
+
+### Delete gotchas
+
+- **Deletion is permanent and irreversible** — all data stored in the field is lost for every record. There is no soft-delete or undo. Consider `isActive: false` (disable) instead if you might want the data later.
+- **System fields cannot be deleted** — fields where `isSystem: true` or `isCustom: false` are read-only. The API returns `"Cannot delete non-custom fields"` or similar. Only fields with `isCustom: true` can be deleted.
+- **Deleting a RELATION field** — do NOT delete relation fields via this endpoint. Use `DELETE /rest/metadata/relations/{relationId}` (see the `relation` skill). Deleting one side of a relation via the fields endpoint leaves the other side orphaned and may break the schema.
+- **Confirm before deleting** — always tell the user what data will be lost and ask for confirmation before calling DELETE.
 
 ---
 
