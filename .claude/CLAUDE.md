@@ -134,6 +134,7 @@ Use the table below to select the right skill file for a given operation:
 | `.claude/skills/note/SKILL.md` | `note` | Creating, searching, updating, or deleting **notes** |
 | `.claude/skills/task/SKILL.md` | `task` | Creating, searching, updating, or deleting **tasks/to-dos** |
 | `.claude/skills/pipeline/SKILL.md` | `pipeline` | Working with **dynamic CRM pipelines** (discover endpoints first) |
+| `.claude/skills/relation/SKILL.md` | `relation` | Creating or deleting **relation fields** between two objects — uses the RelationMetadata API, includes mandatory name validation to prevent CRM schema breakage |
 | `.claude/skills/note-relation/SKILL.md` | `note-relation` | **Attaching notes** to people, companies, or opportunities |
 | `.claude/skills/task-relation/SKILL.md` | `task-relation` | **Attaching tasks** to people, companies, or opportunities |
 | `.claude/skills/workflow/workflow-agents/workflow-agent/SKILL.md` | `workflow-agent` | **Building or modifying a complete workflow** end-to-end — orchestrates sub-agents for trigger, metadata, variables, actions, and lifecycle |
