@@ -136,8 +136,21 @@ Use the table below to select the right skill file for a given operation:
 | `.claude/skills/pipeline/SKILL.md` | `pipeline` | Working with **dynamic CRM pipelines** (discover endpoints first) |
 | `.claude/skills/note-relation/SKILL.md` | `note-relation` | **Attaching notes** to people, companies, or opportunities |
 | `.claude/skills/task-relation/SKILL.md` | `task-relation` | **Attaching tasks** to people, companies, or opportunities |
+| `.claude/skills/workflow/workflow-agents/workflow-agent/SKILL.md` | `workflow-agent` | **Building or modifying a complete workflow** end-to-end — orchestrates sub-agents for trigger, metadata, variables, actions, and lifecycle |
+
+**Workflow sub-agent skills** (spawned by `workflow-agent` — do not invoke directly):
+
+| Skill file | Name | Responsibility |
+|---|---|---|
+| `.claude/skills/workflow/workflow-agents/workflow-agent-lifecycle/SKILL.md` | `workflow-agent-lifecycle` | Create workflow+version, draft from existing, verify steps, activate/deactivate, read run status |
+| `.claude/skills/workflow/workflow-agents/workflow-agent-trigger/SKILL.md` | `workflow-agent-trigger` | Set trigger type on a DRAFT version, compute trigger output schema |
+| `.claude/skills/workflow/workflow-agents/workflow-agent-metadata/SKILL.md` | `workflow-agent-metadata` | Discover objectNames, fieldMetadataIds, connectedAccountIds, serverless function IDs |
+| `.claude/skills/workflow/workflow-agents/workflow-agent-variables/SKILL.md` | `workflow-agent-variables` | Resolve valid `{{...}}` expressions per step given trigger type and prior step outputs |
+| `.claude/skills/workflow/workflow-agents/workflow-agent-actions/SKILL.md` | `workflow-agent-actions` | Build all step mutations (create → configure → compute schema → connect) in order |
 
 **Selection rules:**
 - For note/task operations on a record, use `note` or `task` to create the item, then `note-relation` or `task-relation` to link it.
 - For pipeline records (not the pipeline definition itself), use `pipeline` — it handles discovery of dynamic endpoints.
 - When an operation spans multiple entities (e.g., create a person and attach a note), read both relevant skills files.
+- For **any workflow build or modification**, use `workflow-agent` — it coordinates all workflow sub-agents automatically. Do not use the individual `workflow-*` skills directly for full workflow builds.
+- The legacy `workflow`, `workflow-triggers`, `workflow-actions`, `workflow-variables`, and `workflow-metadata` skills remain for targeted single-purpose lookups (e.g. checking what a specific action's input fields are). For full builds, always prefer `workflow-agent`.
