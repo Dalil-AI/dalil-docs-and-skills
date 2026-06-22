@@ -1,8 +1,8 @@
 {
   "name": "dalil",
   "displayName": "Dalil AI",
-  "version": "1.1.0",
-  "description": "Dalil AI CRM skills for Claude Code — manage contacts, companies, deals, tasks, notes, pipelines, and inbox; run the GTM onboarding interview and generate a personalized Sales OS",
+  "version": "1.2.0",
+  "description": "Dalil AI CRM skills for Claude Code — manage contacts, companies, deals, tasks, notes, pipelines, and inbox; define custom fields and relations; build outreach sequences and automation workflows; run the GTM onboarding interview and generate a personalized Sales OS",
   "author": { "name": "Dalil AI", "url": "https://app.usedalil.ai" },
   "homepage": "https://app.usedalil.ai",
   "repository": "https://github.com/Dalil-AI/dalil-docs-and-skills"
