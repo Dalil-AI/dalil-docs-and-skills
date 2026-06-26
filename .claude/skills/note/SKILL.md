@@ -146,7 +146,8 @@ filter=createdAt[gte]:2024-01-01T00:00:00.000Z
 
 1. **Body uses blocknote JSON format** — The `bodyV2` field requires both `markdown` and `blocknote` (JSON string). When sending via the simplified API, you can send plain `body` text and it auto-converts.
 2. **Notes are standalone** — They are not directly linked to people/companies. Use Note Relations (`/rest/noteTargets`) to create associations.
-3. **Blocknote IDs must be unique** — Each block in the blocknote JSON array needs a unique UUID-format `id`.
+3. **NEVER use nested `noteTargets.createMany` during note creation** — The noteTarget object cannot be created via nested writes or workflow context. Always create the note first (`POST /rest/notes`), get the returned `id`, then create the relation as a separate request (`POST /rest/noteTargets` with `noteId` + target ID). Nested approaches silently fail or return an "Object cannot be created by workflow" error.
+4. **Blocknote IDs must be unique** — Each block in the blocknote JSON array needs a unique UUID-format `id`.
 4. **Search is title-only** — No body content search is available.
 5. **GraphQL search returns IDs only** — Follow up with `GET /rest/notes?filter=id[in]:[id1,id2]` to fetch full records.
 6. **URL-encode GET filter params** — Filter strings contain special characters (`[`, `]`, `:`) that break manually constructed URLs. Use URL encoding when making requests (e.g., `curl -G --data-urlencode "filter=..."`).
