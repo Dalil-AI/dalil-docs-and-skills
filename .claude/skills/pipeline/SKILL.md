@@ -209,3 +209,4 @@ mutation { updatePipelineRecord(pipelineId: "..." recordId: "..." position: 3) {
 5. **`position` is a number** — Represents the column/stage index. 0-based or 1-based depends on the pipeline configuration. Use `getPipelineRecords` to see existing positions before updating.
 6. **No search on pipeline records** — There is no `searchPipeline` GraphQL query. To find a record in a pipeline, list all pipeline records and match by `recordId`.
 7. **Custom fields vary per pipeline** — Use `getPipelineRecordsWithAllFields` to see all fields for a given pipeline's records.
+8. **Pipelines must be created in the Dalil UI — there is no create-pipeline endpoint** — This skill only operates on *existing* pipelines (discover, list/add/remove/reorder records, read stages, update fields via the `field` skill). To create a new pipeline, the user must do it in the UI first; treat this as a known prerequisite, not a mid-build surprise.

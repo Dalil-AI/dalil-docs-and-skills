@@ -41,17 +41,18 @@ Response — extract `workflowId`:
 { "data": { "createWorkflow": { "id": "workflow-uuid", "name": "My Automation" } } }
 ```
 
+**Do NOT `POST /rest/workflowVersions`** — creating the workflow container already auto-provisions a DRAFT `v1` version. That endpoint returns `400 "Method not allowed."` Instead, fetch the auto-created version:
+
 ```bash
-# Step 2: Create a DRAFT version
-curl -s -X POST "https://app.usedalil.ai/rest/workflowVersions" \
-  -H "Authorization: Bearer {apiKey}" \
-  -H "Content-Type: application/json" \
-  -d '{ "name": "v1", "workflowId": "{workflow-uuid}" }'
+# Step 2: Fetch the auto-created DRAFT version
+curl -s -G "https://app.usedalil.ai/rest/workflows/{workflow-uuid}" \
+  --data-urlencode "depth=1" \
+  -H "Authorization: Bearer {apiKey}"
 ```
 
-Response — extract `versionId`:
+Response — extract `versionId` from `.data.workflows[0].versions[0].id`:
 ```json
-{ "data": { "createWorkflowVersion": { "id": "version-uuid", "status": "DRAFT" } } }
+{ "data": { "workflows": [{ "id": "workflow-uuid", "versions": [{ "id": "version-uuid", "status": "DRAFT" }] }] } }
 ```
 
 Return to orchestrator:
@@ -285,10 +286,10 @@ All returns include a `status` field (`"success"` or `"error"`) and `error` (nul
 
 ## Gotchas
 
-1. **Workflow ≠ WorkflowVersion** — `POST /rest/workflows` creates only the container with no trigger or steps. Always create a version after.
+1. **Workflow ≠ WorkflowVersion, but version creation is automatic** — `POST /rest/workflows` auto-provisions a DRAFT `v1` version with no trigger or steps. Fetch it via `GET /rest/workflows/{id}?depth=1` → `.versions[0].id`. Do NOT `POST /rest/workflowVersions` — that endpoint returns `400 "Method not allowed."`
 2. **Versions are immutable once ACTIVE** — editing an ACTIVE version will fail. Use `createDraftFromWorkflowVersion` to create an editable copy.
 3. **Only one ACTIVE version per workflow** — activating a new version automatically deactivates the previous one.
-4. **`runWorkflowVersion` requires ACTIVE status** — you cannot test-run a DRAFT. Activate first.
+4. **`runWorkflowVersion` requires ACTIVE status** — you cannot test-run a DRAFT. Activate first. There's no dry-run endpoint, so Task D1's verification (above) is the only pre-activation safety net — also confirm every SELECT/MULTI_SELECT filter value is a real option and every downstream-referenced step has a computed output schema.
 5. **`depth=1` required for nested data** — calling `/rest/workflows/{id}` without depth returns only top-level fields.
 6. **Never use `depth=2` on a workflow** — it pulls all versions × all steps × all run history and can exceed 30MB. Fetch the version separately with `depth=0` instead.
 7. **Never list all workflows without a filter** — the full list can be 30MB+. Always search by name first (GraphQL) or filter by name in REST.
