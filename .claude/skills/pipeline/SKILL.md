@@ -1,6 +1,6 @@
 ---
 name: pipeline
-description: Manage dynamic CRM pipelines in Dalil AI — discover available pipelines, retrieve their fields and stages, and create/update/delete pipeline records. Endpoints are dynamic (namePlural varies per pipeline); always discover before operating.
+description: Manage CRM pipelines in Dalil AI — discover pipelines, add/remove/reorder records within a pipeline, and read pipeline stages. Pipelines are separate from opportunities; they track any object (company, person, etc.) through custom stages via GraphQL.
 ---
 
 # Dalil AI: Pipeline API Skills
@@ -9,173 +9,204 @@ description: Manage dynamic CRM pipelines in Dalil AI — discover available pip
 
 - **Base URL:** `https://app.usedalil.ai`
 - **Auth:** `Authorization: Bearer {apiKey}`
-- **API Key:** `{PASTE_YOUR_API_KEY_HERE}` — replace with your Dalil API key before making any requests. You can also set this once in `.claude/CLAUDE.md` so it's available across all skills.
-- **Content-Type:** `application/json` *(POST/PATCH requests only)*
-- **Accept:** `application/json` *(GET requests)*
-- **Resource path:** `/rest/{namePlural}` (dynamic per pipeline)
+- **API Key:** `{PASTE_YOUR_API_KEY_HERE}` — replace with your Dalil API key before making any requests.
+- **All pipeline operations use GraphQL** — `POST /graphql`. There are NO REST endpoints for pipelines.
 
-**GraphQL search (`POST /graphql`):**
-- Uses `searchPipeline` query (NOT `search`) — requires both `searchInput: String!` and `nameSingular: String!` variables
-- `searchInput` is a plain `String!` variable — do NOT pass as an object (causes type error)
-- `limit` must be hardcoded in the query string — do NOT pass as a `$limit` variable (causes type error)
-- Returns IDs only — always follow up with REST to fetch full records
+## Key Concepts
 
-## Important: Dynamic Endpoints
+- A **Pipeline** is a metadata object linked to any CRM object (company, person, etc.) via `objectMetadataId`. It has its own `nameSingular`, `namePlural`, `labelSingular`, `labelPlural`, and custom fields.
+- A **Pipeline Record** tracks one CRM record's position in a pipeline. It has `recordId` (the CRM object's id) and `position` (a number representing its stage/column).
+- Pipelines are discovered by their associated object's `objectMetadataId` — you need to know the object first.
 
-Pipeline endpoints are NOT fixed. Each pipeline has its own `namePlural` (e.g., `startupFundraisings`, `salesPipelines`). You MUST discover available pipelines first.
+## Step 1 — Discover Pipelines for an Object
 
-## Discovery (Required First Step)
-
-### List all pipelines
-```
-GET /rest/metadata/pipelines
-```
-
-### Get pipeline fields
-```
-GET /rest/metadata/pipelines/{pipelineId}
-```
-
-## Endpoints
-
-| Operation | Method | Path | Required Fields |
-|-----------|--------|------|-----------------|
-| Create | POST | `/rest/{namePlural}` | `recordId` (parent) |
-| Get | GET | `/rest/{namePlural}/{id}` | `id` (path) |
-| List | GET | `/rest/{namePlural}` | — |
-| Update | PATCH | `/rest/{namePlural}/{id}` | `id` (path) |
-| Delete | DELETE | `/rest/{namePlural}/{id}` | `id` (path) |
-| Search | POST | `/graphql` | `searchInput`, `nameSingular` |
-
-## Create Pipeline Record
-
-### Request Body
-
-```json
-{
-  "recordId": "uuid-of-parent-company-or-person",
-  "stage": "SERIES_A",
-  "fundingAmount": 5000000000000,
-  "targetCloseDate": "2024-09-01T00:00:00.000Z"
-}
-```
-
-### Required Fields
-
-- `recordId` (UUID) — Parent record ID (Company or Person, depends on pipeline type)
-
-### Custom Properties
-
-All other fields are pipeline-specific. Discover them via:
-```
-GET /rest/metadata/pipelines/{pipelineId}
-```
-
-Field types follow the same rules as other entities:
-- SELECT fields: UPPER_SNAKE_CASE values
-- CURRENCY fields: amounts in micros
-- DATE_TIME fields: ISO 8601 format
-- BOOLEAN fields: true/false
-
-## Update Pipeline Record
-
-```
-PATCH /rest/{namePlural}/{id}?depth=1
-```
-
-Send only custom properties to update.
-
-## Get Pipeline Record
-
-```
-GET /rest/{namePlural}/{id}?depth=1
-```
-
-Default depth is 1 (includes parent record).
-
-## List Pipeline Records
-
-```
-GET /rest/{namePlural}?limit=60&order_by=createdAt[DescNullsLast]&filter=...&depth=1
-```
-
-Default depth is 1.
-
-## Delete Pipeline Record
-
-```
-DELETE /rest/{namePlural}/{id}
-```
-
-## Search Pattern
-
-Pipeline search uses a DIFFERENT GraphQL query: `searchPipeline` (not `search`).
-
-Step 1 — GraphQL:
-```json
-{
-  "query": "query SearchPipeline($searchInput: String!, $nameSingular: String!) { searchPipeline(searchInput: $searchInput, nameSingular: $nameSingular, limit: 5) { recordId } }",
-  "variables": {
-    "searchInput": "Acme",
-    "nameSingular": "startupFundraising"
+```graphql
+query {
+  findManyPipelinesByObjectMetadataId(objectMetadataId: "uuid-of-object-metadata") {
+    id
+    nameSingular
+    namePlural
+    labelSingular
+    labelPlural
+    description
+    icon
+    isActive
   }
 }
 ```
-POST to `https://app.usedalil.ai/graphql`
 
-Step 2 — Fetch:
+To get `objectMetadataId` for a known object (e.g. company), query the metadata API:
 ```
-GET /rest/{namePlural}?filter=id[in]:[recordId1,recordId2]&depth=1
+GET /rest/metadata/objects?filter=nameSingular[eq]:company
 ```
+The `id` field in the response is the `objectMetadataId`.
 
-## Full Workflow
+## Step 2 — List Records in a Pipeline
 
-```
-# 1. Discover pipelines
-GET /rest/metadata/pipelines
-
-# 2. Get fields for a specific pipeline
-GET /rest/metadata/pipelines/{pipelineId}
-# Response includes: nameSingular, namePlural, fields[], parentRecordType
-
-# 3. Get parent records (companies or people, based on pipeline)
-GET /rest/companies?limit=100
-# or
-GET /rest/people?limit=100
-
-# 4. Create a record
-POST /rest/{namePlural}
-{ "recordId": "parent-uuid", ...customFields }
-
-# 5. List records
-GET /rest/{namePlural}?depth=1
-
-# 6. Update a record
-PATCH /rest/{namePlural}/{id}
-{ ...fieldsToUpdate }
+```graphql
+query {
+  getPipelineRecords(pipelineId: "uuid-of-pipeline", limit: 60) {
+    id
+    recordId
+    position
+    createdAt
+    updatedAt
+  }
+}
 ```
 
-## Filter Examples
+To get full record details, take the `recordId` values and fetch from the corresponding REST endpoint:
+```
+GET /rest/companies?filter=id[in]:[recordId1,recordId2]&depth=1
+```
+
+## Step 3 — Get Records with All Pipeline Fields
+
+```graphql
+query {
+  getPipelineRecordsWithAllFields(
+    pipelineId: "uuid-of-pipeline"
+    limit: 60
+  )
+}
+```
+
+Returns full pipeline record rows including all custom fields defined on the pipeline.
+
+## Get Pipelines for a Specific CRM Record
+
+To see which pipelines a specific record (e.g. a company) is enrolled in:
+
+```graphql
+query {
+  getPipelinesByRecordId(recordId: "uuid-of-crm-record") {
+    pipelines {
+      id
+      labelSingular
+    }
+    opportunities {
+      id
+      recordId
+      position
+    }
+  }
+}
+```
+
+## Add a Record to a Pipeline
+
+```graphql
+mutation {
+  createPipelineRecord(
+    pipelineId: "uuid-of-pipeline"
+    recordId: "uuid-of-crm-record"
+  ) {
+    id
+    recordId
+    position
+  }
+}
+```
+
+## Add Multiple Records to a Pipeline
+
+```graphql
+mutation {
+  batchCreatePipelineRecords(
+    pipelineId: "uuid-of-pipeline"
+    recordIds: ["uuid1", "uuid2", "uuid3"]
+  ) {
+    id
+    recordId
+    position
+  }
+}
+```
+
+## Update a Record's Position in a Pipeline
+
+```graphql
+mutation {
+  updatePipelineRecord(
+    pipelineId: "uuid-of-pipeline"
+    recordId: "uuid-of-crm-record"
+    position: 2
+  ) {
+    id
+    recordId
+    position
+  }
+}
+```
+
+## Update a Custom Field on a Pipeline Record
+
+```graphql
+mutation {
+  updatePipelineRecordField(
+    pipelineId: "uuid-of-pipeline"
+    recordId: "uuid-of-crm-record"
+    fieldName: "stage"
+    fieldValue: { value: "QUALIFIED" }
+  ) {
+    id
+    recordId
+    position
+  }
+}
+```
+
+## Remove a Record from a Pipeline
+
+```graphql
+mutation {
+  deletePipelineRecord(
+    pipelineId: "uuid-of-pipeline"
+    recordId: "uuid-of-crm-record"
+  )
+}
+```
+
+## Remove Multiple Records from a Pipeline
+
+```graphql
+mutation {
+  batchDeletePipelineRecords(
+    pipelineId: "uuid-of-pipeline"
+    recordIds: ["uuid1", "uuid2"]
+  )
+}
+```
+
+## Full Workflow Example
 
 ```
-# Records at a specific stage
-filter=stage[eq]:FUNDED
+# 1. Get objectMetadataId for companies
+GET /rest/metadata/objects?filter=nameSingular[eq]:company
 
-# Records created after a date
-filter=createdAt[gte]:2024-01-01T00:00:00.000Z
+# 2. Find pipelines for companies
+POST /graphql
+{ findManyPipelinesByObjectMetadataId(objectMetadataId: "...") { id labelSingular } }
+
+# 3. List records in a pipeline
+POST /graphql
+{ getPipelineRecords(pipelineId: "...") { recordId position } }
+
+# 4. Fetch the actual company records
+GET /rest/companies?filter=id[in]:[recordId1,recordId2]&depth=1
+
+# 5. Move a company to the next stage
+POST /graphql
+mutation { updatePipelineRecord(pipelineId: "..." recordId: "..." position: 3) { position } }
 ```
 
 ## Gotchas
 
-1. **Endpoints are dynamic** — The URL path comes from `pipelineMetadata.namePlural`. There is no fixed `/rest/pipelines` endpoint for records.
-2. **Must discover pipelines first** — Call `GET /rest/metadata/pipelines` before any pipeline operations.
-3. **Uses different GraphQL query** — Pipeline search uses `searchPipeline`, not `search`.
-4. **GraphQL requires `nameSingular`** — The search query needs the pipeline's singular name, not plural.
-5. **Parent record is required on create** — `recordId` links the pipeline record to a Company or Person.
-6. **Default depth is 1** — Pipeline records default to depth 1 (includes parent record).
-7. **Custom fields vary** — Each pipeline has unique fields. Always check metadata before creating/updating.
-8. **SELECT values are UPPER_SNAKE_CASE** — Same as other entities: `FUNDED`, `SERIES_A`, `DEMO`, etc.
-9. **Currency amounts in micros** — Same rule: multiply by 1,000,000.
-10. **GraphQL `limit` must be hardcoded, not a variable** — Passing `$limit: Int` as a variable causes a type error. Inline it directly: `limit: 5`.
-11. **GraphQL search returns IDs only** — Follow up with `GET /rest/{namePlural}?filter=id[in]:[id1,id2]` to fetch full records.
-12. **URL-encode GET filter params** — Filter strings contain special characters (`[`, `]`, `:`) that break manually constructed URLs. Use URL encoding when making requests (e.g., `curl -G --data-urlencode "filter=..."`).
+1. **GraphQL only** — There are no REST endpoints for pipeline operations. All mutations and queries go to `POST /graphql`.
+2. **Pipeline ≠ opportunity stages** — Pipelines are independent objects, not the `stage` field on an opportunity. They can track any CRM object (company, person, etc.).
+3. **Must discover pipelines first** — You need the `pipelineId` UUID before any record operations. Get it via `findManyPipelinesByObjectMetadataId`.
+4. **`recordId` is the CRM object's id** — Not the pipeline record's own `id`. A pipeline record has both an `id` (its own UUID in the pipeline table) and a `recordId` (the linked company/person/etc UUID).
+5. **`position` is a number** — Represents the column/stage index. 0-based or 1-based depends on the pipeline configuration. Use `getPipelineRecords` to see existing positions before updating.
+6. **No search on pipeline records** — There is no `searchPipeline` GraphQL query. To find a record in a pipeline, list all pipeline records and match by `recordId`.
+7. **Custom fields vary per pipeline** — Use `getPipelineRecordsWithAllFields` to see all fields for a given pipeline's records.
+8. **Pipelines must be created in the Dalil UI — there is no create-pipeline endpoint** — This skill only operates on *existing* pipelines (discover, list/add/remove/reorder records, read stages, update fields via the `field` skill). To create a new pipeline, the user must do it in the UI first; treat this as a known prerequisite, not a mid-build surprise.

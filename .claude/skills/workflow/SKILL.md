@@ -7,13 +7,21 @@ description: Manage workflow automations in Dalil AI CRM — create workflows an
 
 ## Quick Reference
 
-- **Base URL:** `https://app.usedalil.ai`
 - **Auth:** `Authorization: Bearer {apiKey}`
 - **API Key:** `{PASTE_YOUR_API_KEY_HERE}` — replace with your Dalil API key before making any requests. You can also set this once in `.claude/CLAUDE.md` so it's available across all skills.
 - **Content-Type:** `application/json` *(POST/PATCH requests only)*
 - **Accept:** `application/json` *(GET requests)*
-- **REST resource paths:** `/rest/workflows`, `/rest/workflowVersions`, `/rest/workflowRuns`
-- **GraphQL endpoint:** `POST https://app.usedalil.ai/graphql`
+
+### Endpoints & Hosts (across the whole workflow skill family)
+
+The workflow skill family spans **four distinct surfaces on two different hosts** — sending a call to the wrong one is a common mistake.
+
+| Surface | Host + path | Used for |
+|---|---|---|
+| REST (workflows) | `https://app.usedalil.ai/rest/workflows`, `/workflowVersions`, `/workflowRuns` | Reading workflows, versions, runs |
+| Main GraphQL | `POST https://app.usedalil.ai/graphql` | All step/version mutations (create/update/delete step, edges, activate, deactivate, run, serverless functions) |
+| Metadata GraphQL | `POST https://app.usedalil.ai/metadata` | Discovering `objectName`s, `fieldMetadataId`s via `fieldsList` (see `workflow-metadata` skill) |
+| Field/pipeline metadata REST | `https://api.usedalil.ai/rest/metadata` — **different host** (`api.` not `app.`) | Creating/updating/deleting custom fields and pipelines (see `field` skill) |
 
 **Critical rules:**
 - A **Workflow** is a container — all logic lives inside a **WorkflowVersion**
@@ -126,19 +134,15 @@ Response:
 }
 ```
 
-Step 2 — Create a draft version:
+**Creating a workflow auto-provisions a DRAFT `v1` version — do not POST to `/rest/workflowVersions`.** `POST /rest/workflowVersions` is not a valid way to create a version and returns `400 "Method not allowed."` Fetch the auto-created version instead:
 
 ```bash
-curl -s -X POST "https://app.usedalil.ai/rest/workflowVersions" \
-  -H "Authorization: Bearer {apiKey}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "v1",
-    "workflowId": "workflow-uuid"
-  }'
+curl -s -G "https://app.usedalil.ai/rest/workflows/{workflowId}" \
+  --data-urlencode "depth=1" \
+  -H "Authorization: Bearer {apiKey}"
 ```
 
-The new version will have `status: "DRAFT"` and empty `trigger` and `steps`.
+Extract the version ID from `.data.workflows[0].versions[0].id` (or `.data.workflow.versions[0].id` depending on singular/plural response shape). The auto-created version will have `status: "DRAFT"` and empty `trigger` and `steps`.
 
 *Example prompts: "Create a new workflow called Lead Nurture", "Set up a blank automation for onboarding"*
 
@@ -363,13 +367,17 @@ filter=startedAt[gt]:2026-01-01T00:00:00.000Z
 
 ## Gotchas
 
-1. **Workflow ≠ WorkflowVersion** — Creating a workflow via `POST /rest/workflows` creates only the container. You must separately create a `workflowVersion` with `workflowId` to have something to edit.
+1. **Workflow ≠ WorkflowVersion, but version creation is automatic** — Creating a workflow via `POST /rest/workflows` auto-provisions a DRAFT `v1` version. Fetch it via `GET /rest/workflows/{id}?depth=1` → `.versions[0].id`. Do NOT `POST /rest/workflowVersions` — that endpoint returns `400 "Method not allowed."`
 2. **Versions are immutable after activation** — Once `status = ACTIVE`, the `trigger` and `steps` fields are frozen. Use `createDraftFromWorkflowVersion` to get an editable copy.
 3. **Only one ACTIVE version per workflow** — Activating a new version automatically deactivates the previous one.
 4. **All step editing is via GraphQL, not REST** — You cannot PATCH `trigger` or `steps` directly on `/rest/workflowVersions`. Use `createWorkflowVersionStep`, `updateWorkflowVersionStep`, etc. (covered in `workflow-actions` skill).
 5. **`depth=1` required for nested data** — Calling `/rest/workflows/{id}` without `depth=1` returns only top-level fields; versions will not be included.
 6. **`state.stepInfos` is keyed by step UUID** — To look up a step's output you need its `id`, not its `name`. Match against the `steps` array in `state.flow.steps` to correlate name → id → output.
 7. **REST response wraps results** — The response shape is `{ "data": { "workflow": {...} } }` (singular) or `{ "data": { "workflows": [...] } }` (plural). Use `.data.workflow` / `.data.workflowVersions` / `.data.workflowRuns` in jq.
-8. **`runWorkflowVersion` only works on ACTIVE versions** — Running a DRAFT version will return an error. Activate it first, or use a test run approach via the payload field if the trigger is MANUAL.
+8. **`runWorkflowVersion` only works on ACTIVE versions** — Running a DRAFT version will return an error. There is no dry-run/validate endpoint for a DRAFT, so the first real test of a large workflow requires activating it. Reduce that risk with a pre-activation checklist:
+   - Every step has `"valid": true`
+   - No step has `"objectName": "workflow"` in `settings.input` — that's a ghost placeholder step left over from a `createWorkflowVersionStep` call that was never followed by `updateWorkflowVersionStep`
+   - Every step whose output is referenced downstream via `{{stepId.*}}` has had `computeStepOutputSchema` called and the result written back via `updateWorkflowVersionStep`
+   - Every SELECT/MULTI_SELECT filter `value` is a real option for that field, JSON-encoded as an array string (e.g. `"[\"WON\"]"`)
 9. **`payload` in `runWorkflowVersion` replaces trigger data** — For MANUAL triggers, the `payload` JSON is used as the trigger output and becomes the `{{trigger.*}}` variable source for the run.
 10. **Deleting a workflow cascades to versions and runs** — There is no soft delete for workflows. All associated data is permanently removed.

@@ -99,7 +99,8 @@ The path segments map directly to the keys in the step's `outputSchema`.
 | `CONDITION` | **Empty** | No output variables |
 | `COMMENT` | **Empty** | No output variables |
 | `EMPTY` | **Empty** | No output variables |
-| `ENRICH` | **Empty** | No output variables |
+| `ENRICH` (freeform prompt variant) | **Empty** | No output variables — results applied externally |
+| `ENRICH` (provider variant — `operations`/`selectedOptions` input) | Per-operation result map | `{{stepId.options.<opId>.success}}`, e.g. `{{stepId.options.liBasicDetails.success}}` |
 | `PAUSE_SEQUENCE_PERSON` | **Empty** | No output variables |
 
 ---

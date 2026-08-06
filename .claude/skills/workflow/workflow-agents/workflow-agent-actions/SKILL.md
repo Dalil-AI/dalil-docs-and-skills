@@ -28,6 +28,7 @@ You build each step in order. For each step: create → configure → compute ou
 - **Connection mutation:** `createWorkflowVersionEdge`
 - **Output schema:** `computeStepOutputSchema`
 - **Version must be DRAFT** — stop and return error if ACTIVE
+- **Load-bearing rule:** compute the output schema (step 3 below) for every step whose output a later step references via `{{stepId.*}}`, before wiring the consumer — otherwise the variable silently resolves to empty at runtime
 
 ### Valid `stepType` values for `createWorkflowVersionStep`
 
@@ -40,6 +41,7 @@ HTTP_REQUEST  CODE  FORM
 CONDITION  FILTER  ITERATOR  DELAY
 AGGREGATE_VALUES  FORMULA  RANDOM_NUMBER  ADJUST_TIME
 CREATE_SEQUENCE_PERSON  PAUSE_SEQUENCE_PERSON
+AI_CRM_AGENT  ENRICH
 COMMENT
 ```
 
@@ -53,6 +55,8 @@ For each step in the ordered plan:
 
 ### 1. Create the step (get the UUID)
 
+**Pass your own client-generated `id` to make builds deterministic.** `CreateWorkflowVersionStepInput` accepts an optional `id` (String — pass a UUID you generate yourself) and an optional `nextStepId` (UUID). Setting `id` means you already know the step's UUID immediately — no need to diff `stepsDiff` to recover it.
+
 ```bash
 curl -s -X POST "https://app.usedalil.ai/graphql" \
   -H "Authorization: Bearer {apiKey}" \
@@ -61,21 +65,25 @@ curl -s -X POST "https://app.usedalil.ai/graphql" \
     "query": "mutation CreateWorkflowVersionStep($input: CreateWorkflowVersionStepInput!) { createWorkflowVersionStep(input: $input) { triggerDiff stepsDiff } }",
     "variables": {
       "input": {
+        "id": "{your-client-generated-uuid}",
         "workflowVersionId": "{versionId}",
         "stepType": "{STEP_TYPE}",
         "parentStepId": "{trigger OR previous-step-uuid}",
+        "nextStepId": "{optional-next-step-uuid}",
         "position": { "x": 0, "y": 220 }
       }
     }
   }'
 ```
 
+- `id`: optional, client-generated UUID — generate it yourself before calling, then reuse the same value in the following `updateWorkflowVersionStep` call instead of parsing `stepsDiff`
+- `nextStepId`: optional UUID — wire the next step at creation time instead of a separate edge call
 - `parentStepId`: use literal `"trigger"` for the first step; prior step UUID for subsequent steps
 - `position.y`: increment by 220 per step (220, 440, 660, ...)
 - `position.x`: shift for branches (0 = main flow, 200+ = true branch, -200 = false branch)
 - **This creates a placeholder step with `objectName: "workflow"` and `valid: false`** — always follow with update
 
-Extract the new step's `id` from the `stepsDiff` in the response.
+If you didn't pass `id`, extract the new step's `id` from the `stepsDiff` in the response.
 
 ### 2. Update the step (configure it)
 
@@ -142,6 +150,53 @@ curl -s -X POST "https://app.usedalil.ai/graphql" \
     }
   }'
 ```
+
+### 5. Delete a step or edge (cleanup)
+
+`deleteWorkflowVersionStep` takes `DeleteWorkflowVersionStepInput { workflowVersionId: UUID, stepId: String }` — note the field is **`stepId`, not `id`**:
+
+```bash
+curl -s -X POST "https://app.usedalil.ai/graphql" \
+  -H "Authorization: Bearer {apiKey}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation DeleteWorkflowVersionStep($input: DeleteWorkflowVersionStepInput!) { deleteWorkflowVersionStep(input: $input) { triggerDiff stepsDiff } }",
+    "variables": {
+      "input": {
+        "workflowVersionId": "{versionId}",
+        "stepId": "{step-uuid-to-delete}"
+      }
+    }
+  }'
+```
+
+`deleteWorkflowVersionEdge` reuses `CreateWorkflowVersionEdgeInput` (`source`/`target`):
+
+```bash
+curl -s -X POST "https://app.usedalil.ai/graphql" \
+  -H "Authorization: Bearer {apiKey}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation DeleteWorkflowVersionEdge($input: CreateWorkflowVersionEdgeInput!) { deleteWorkflowVersionEdge(input: $input) { triggerDiff stepsDiff } }",
+    "variables": {
+      "input": {
+        "workflowVersionId": "{versionId}",
+        "source": "{source-step-uuid}",
+        "target": "{target-step-uuid}"
+      }
+    }
+  }'
+```
+
+Use these to clean up CONDITION's and ITERATOR's auto-created placeholder children (see their sections below) before wiring your own steps.
+
+### Wiring steps together — `nextStepIds` vs explicit edges
+
+A step's own `nextStepIds` field (set via `updateWorkflowVersionStep`, or `nextStepId` at create time per B1 above) is the source of truth for what runs after it. `createWorkflowVersionEdge` is a separate, additive way to connect two existing steps without resending the full upstream step object.
+
+- **Linear (1→1):** set `nextStepIds: ["{next-uuid}"]` on the upstream step.
+- **Fan-out (1→many):** branching steps like CONDITION route via their own settings (`trueNextStepIds`/`falseNextStepIds`), not `nextStepIds` — leave `nextStepIds: []` on those.
+- **Fan-in (many→1):** every upstream branch's last step sets its own `nextStepIds` to the same shared downstream step UUID — there's no separate "merge" step type. Use `createWorkflowVersionEdge` if you'd rather not resend the full upstream step object (re-sending risks clearing fields per gotcha #2).
 
 ---
 
@@ -242,6 +297,10 @@ Use the `variablesMap` and `metadataContext` from the orchestrator to fill in `{
 
 ### FIND_RECORDS
 
+**`recordFilters` alone is not enough — `gqlOperationFilter` is required.** `recordFilters`/`recordFilterGroups` is the human-readable display filter; `gqlOperationFilter` (a GraphQL-style filter object) is what the engine actually executes the query with. Omitting it means the step silently doesn't filter as expected even though `recordFilters` looks correct.
+
+**SELECT/MULTI_SELECT `value` must be a JSON-encoded array string** (e.g. `"[\"WON\"]"`), not a plain string like `"WON"`.
+
 ```json
 {
   "id": "{step-uuid}",
@@ -260,12 +319,13 @@ Use the `variablesMap` and `metadataContext` from the orchestrator to fill in `{
             "type": "SELECT",
             "stepOutputKey": "stage",
             "operand": "IS_NOT",
-            "value": "WON",
+            "value": "[\"WON\"]",
             "stepFilterGroupId": "group-1",
             "fieldMetadataId": "{stage-fieldMetadataId-from-metadataContext}"
           }
         ],
-        "recordFilterGroups": [{ "id": "group-1", "logicalOperator": "AND" }]
+        "recordFilterGroups": [{ "id": "group-1", "logicalOperator": "AND" }],
+        "gqlOperationFilter": { "and": [{ "stage": { "neq": "WON" } }] }
       },
       "orderBy": { "createdAt": "DescNullsLast" },
       "limit": 20
@@ -275,6 +335,10 @@ Use the `variablesMap` and `metadataContext` from the orchestrator to fill in `{
   }
 }
 ```
+
+To filter on a composite sub-field (EMAILS, PHONES, LINKS, ADDRESS, CURRENCY, FULL_NAME), add `compositeFieldSubFieldName` to the filter (e.g. `"primaryEmail"` to target `emails.primaryEmail`).
+
+This filter shape (`filter.recordFilters` + `recordFilterGroups` + `fieldMetadataId` + `gqlOperationFilter`) is different from CONDITION/FILTER's shape (`stepFilters` + `stepFilterGroups` + `stepOutputKey`, no `gqlOperationFilter`) — don't mix them up.
 
 Output: `{{stepId.first.*}}` for top result, `{{stepId.all}}` for array, `{{stepId.totalCount}}`.
 
@@ -338,6 +402,8 @@ Output: `{{stepId.first.*}}` for top result, `{{stepId.all}}` for array, `{{step
 ```
 
 **CONDITION does not use top-level `nextStepIds`** — routing is via `trueNextStepIds` / `falseNextStepIds` inside `settings.input`.
+
+**Creating a CONDITION auto-spawns two placeholder branch steps.** Calling `createWorkflowVersionStep` with `stepType: "CONDITION"` causes the API to create not one but *three* steps — the CONDITION plus an EMPTY placeholder for each branch, already wired as `trueNextStepIds`/`falseNextStepIds`. Either reuse the two placeholders as your true/false targets, or delete them (`deleteWorkflowVersionStep`, see Build Protocol step 5) before wiring your own steps. If you're diffing `stepsDiff` to count new steps, expect three, not one.
 
 ---
 
@@ -461,6 +527,8 @@ All return `{{stepId.value}}`.
 }
 ```
 
+**`body` type is unconfirmed — both object and stringified-JSON-string forms appear in real exported steps** (e.g. provider integrations like SmartLead use a stringified string). The example above uses an object; if a step's `body` fails to send correctly, try a stringified JSON string instead. `{{...}}` interpolation works as a substring either way.
+
 Output schema is dynamic — cannot be computed until a test run. Note this in return.
 
 ---
@@ -493,6 +561,78 @@ Output schema is dynamic — populated after test execution.
 
 ---
 
+### AI_CRM_AGENT
+
+An AI agent step that reads/writes a target CRM record, guided by a prompt. Reverse-engineered from exported workflows — two open questions are noted below, don't invent answers for them.
+
+```json
+{
+  "id": "{step-uuid}",
+  "name": "Qualify lead",
+  "type": "AI_CRM_AGENT",
+  "valid": true,
+  "position": { "x": 0, "y": 220 },
+  "nextStepIds": [],
+  "settings": {
+    "input": {
+      "main": { "id": "{step-uuid}", "type": "entity", "nameSingular": "person" },
+      "input": [
+        { "{fieldMetadataId-from-metadataContext}": true }
+      ],
+      "prompt": "Review this person's recent activity and decide if they qualify as a warm lead.",
+      "recordId": "{{trigger.properties.after.id}}",
+      "includeReason": true,
+      "businessContextDocumentIds": []
+    },
+    "outputSchema": {},
+    "errorHandlingOptions": { "retryOnFailure": { "value": false }, "continueOnFailure": { "value": false } }
+  }
+}
+```
+
+**`input` fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `main` | object | `{ id, type: "entity", nameSingular }` — the target object the agent operates on |
+| `input` | array | Per-field boolean maps keyed by `fieldMetadataId` — **unclear whether these gate read access, write access, or both; verify against a live run before relying on this to control writes** |
+| `prompt` | string | The instruction given to the agent; supports `{{...}}` variables |
+| `recordId` | string | UUID (or `{{...}}` expression) of the record the agent acts on |
+| `includeReason` | boolean | Whether the agent's reasoning is included in its output |
+| `businessContextDocumentIds` | string[] | IDs of business-context documents attached to the agent — **how these documents are created/managed is undocumented; confirm before depending on it** |
+
+---
+
+### ENRICH
+
+ENRICH has **two distinct variants** depending on `input` shape:
+
+**Variant A — freeform AI prompt:**
+```json
+{ "type": "ENRICH", "settings": { "input": { "body": "Summarize {{trigger.properties.after.name.firstName}}'s background at {{trigger.properties.after.company.name}}." } } }
+```
+Output: empty — no structured schema, results applied externally.
+
+**Variant B — provider enrichment** (LinkedIn, email finder, etc.) — a completely different shape:
+```json
+{
+  "type": "ENRICH",
+  "settings": {
+    "input": {
+      "operations": ["LINKEDIN_BASIC_DETAILS"],
+      "enrichOptions": {},
+      "selectedOptions": ["LINKEDIN_BASIC_DETAILS"],
+      "overwrite": false,
+      "objectRecordId": "{{trigger.properties.after.id}}",
+      "objectNameSingular": "person"
+    }
+  }
+}
+```
+Valid `operations` values include `LINKEDIN_BASIC_DETAILS`, `LINKEDIN_POSTS_PERSON`, `LINKEDIN_REACTIONS`, `EMAIL_FINDER`. Output **is** structured here — read `{{stepId.options.<opId>.success}}` (e.g. `{{enrichStepId.options.liBasicDetails.success}}`) downstream to check whether an operation succeeded.
+
+---
+
 ## Return to Orchestrator
 
 ```json
@@ -520,8 +660,9 @@ Output schema is dynamic — populated after test execution.
 5. **FILTER uses `{{...}}` in `stepOutputKey`** — unlike CONDITION which uses a plain dot-path. Use double curly braces in FILTER's `stepOutputKey`.
 6. **Set relation fields inline — never a separate CREATE_RECORD** — `taskTargets` and `noteTargets` go inside `objectRecord` directly.
 7. **`fieldMetadataId` must come from the metadata-agent, not from `computeStepOutputSchema`** — use the `/metadata` endpoint with `fieldsList` to get field UUIDs. Never use `computeStepOutputSchema` as a workaround to discover field IDs — that adds an extra roundtrip and returns only the schema shape, not the metadata you need.
-8. **ITERATOR auto-creates an EMPTY child step** — when `createWorkflowVersionStep` is called with `stepType: "ITERATOR"`, the API automatically creates an EMPTY placeholder step inside the loop body and sets it as `initialLoopStepIds[0]`. You must either: (a) delete it and replace with your real first loop step, or (b) set `initialLoopStepIds` in your `updateWorkflowVersionStep` to point to the real first loop step instead. The EMPTY step has `valid: true` but does nothing — leaving it is not harmful but wastes a slot.
-9. **`fieldsToUpdate` in UPDATE_RECORD must match `objectRecord` keys** — missing = silently ignored. Extra = error.
-10. **Do not touch existing steps** — when adding a step to a workflow that already has steps, only create the new step and update edges. Never re-issue `updateWorkflowVersionStep` on steps that should not change.
-11. **Before returning, verify no ghost steps remain** — check that all created steps have `valid: true` and `objectName != "workflow"`. Report any found ghosts in `errors`.
-12. **Check for stale ghost steps before starting** — when editing an existing DRAFT version, fetch the version first and delete any pre-existing invalid steps (`valid: false`) before adding new ones. Stale ghosts accumulate from previous interrupted builds and will block activation.
+8. **CONDITION auto-creates two EMPTY child steps** — `createWorkflowVersionStep` with `stepType: "CONDITION"` creates the condition plus two placeholder branch steps (already set as `trueNextStepIds`/`falseNextStepIds`). Reuse or delete them before wiring real branches; expect three new steps, not one, when diffing `stepsDiff`.
+9. **ITERATOR auto-creates an EMPTY child step** — when `createWorkflowVersionStep` is called with `stepType: "ITERATOR"`, the API automatically creates an EMPTY placeholder step inside the loop body and sets it as `initialLoopStepIds[0]`. You must either: (a) delete it and replace with your real first loop step, or (b) set `initialLoopStepIds` in your `updateWorkflowVersionStep` to point to the real first loop step instead. The EMPTY step has `valid: true` but does nothing — leaving it is not harmful but wastes a slot.
+10. **`fieldsToUpdate` in UPDATE_RECORD must match `objectRecord` keys** — missing = silently ignored. Extra = error.
+11. **Do not touch existing steps** — when adding a step to a workflow that already has steps, only create the new step and update edges. Never re-issue `updateWorkflowVersionStep` on steps that should not change.
+12. **Before returning, verify no ghost steps remain** — check that all created steps have `valid: true` and `objectName != "workflow"`. Report any found ghosts in `errors`.
+13. **Check for stale ghost steps before starting** — when editing an existing DRAFT version, fetch the version first and delete any pre-existing invalid steps (`valid: false`) before adding new ones. Stale ghosts accumulate from previous interrupted builds and will block activation.

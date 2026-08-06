@@ -140,13 +140,17 @@ Use the `id` as `pipelineId` in your field creation payload.
 
 ## Step 2: Check for Name Conflicts
 
-Before creating, list existing fields on the target object or pipeline to avoid duplicate name errors:
+Before creating, list existing fields on the target object or pipeline to avoid duplicate name errors.
+
+**`GET /rest/metadata/fields?filter=objectMetadataId[eq]:{objectMetadataId}` does not scope to the object** — despite the filter, it returns a global union of every field in the workspace (thousands of rows). Do not rely on it to check one object's fields. Instead use:
 
 ```http
-GET /rest/metadata/fields?filter=objectMetadataId[eq]:{objectMetadataId} HTTP/1.1
+GET /rest/metadata/objects/{objectMetadataId} HTTP/1.1
 ```
 
-Scan `name` values in the response. Your new field's `name` must not already exist on that object/pipeline.
+and read the embedded `fields[]` array, or query the `/metadata` GraphQL endpoint's `fieldsList` (see the `workflow-metadata` skill for the exact query).
+
+Scan `name` values in the response. Your new field's `name` must not already exist on that object/pipeline — and if you're creating a **pipeline-scoped** field, it must also not already exist on the pipeline's **parent object** (see gotcha #12 below).
 
 ---
 
@@ -745,6 +749,7 @@ Tracks who performed an action — stores source, name, and context. Used for as
 | Identifier to send | `objectMetadataId` | `pipelineId` |
 | Scope | All views of the object | Scoped to that pipeline only |
 | Omit the other | Omit `pipelineId` entirely | Omit `objectMetadataId` entirely |
+| Name uniqueness | Unique among the object's own fields | Unique among the pipeline's fields **AND** the pipeline's parent object's fields (shared namespace — see gotcha #12) |
 
 **Object field example:**
 ```json
@@ -845,7 +850,7 @@ When `isUnique: true`:
 
 11. **All option values must be unique within a field** — duplicate `value` entries in `options` are rejected.
 
-12. **Field names must be unique per object/pipeline** — API returns `"duplicate key value violates unique constraint"` on collision. Always check Step 2 first.
+12. **Field names must be unique per object/pipeline — AND pipeline-scoped names share the parent object's namespace** — API returns `"duplicate key value violates unique constraint"` on collision. Always check Step 2 first. A pipeline-scoped field's `name` must not already exist on the pipeline's **parent object** either: e.g. if `person` already has a `sourceDetails` field, creating a `sourceDetails` field scoped to any `person`-based pipeline (via `pipelineId`) will fail with the same duplicate-key error, even though the pipeline itself has no `sourceDetails` field yet.
 
 13. **Reserved names will fail** — see the Reserved Names list above. These include common words like `type`, `data`, `filter`, `index`, `address`, `links`, `currency`.
 
@@ -870,7 +875,7 @@ Authorization: Bearer {apiKey}
 Content-Type: application/json
 ```
 
-To find a field's ID: `GET /rest/metadata/fields?filter=objectMetadataId[eq]:{objectId}` (or use `pipelineId` for pipeline fields) and scan for the field by `name`.
+To find a field's ID: the `filter=objectMetadataId[eq]:{objectId}` filter does not scope (see Step 2 above) — use `GET /rest/metadata/objects/{objectId}` and read embedded `fields[]`, or the `/metadata` GraphQL `fieldsList`, and scan for the field by `name`.
 
 ### What can be updated
 
@@ -954,13 +959,13 @@ Authorization: Bearer {apiKey}
 
 ### Finding the field ID
 
-If you don't have the field ID, fetch the object's fields first:
+If you don't have the field ID, fetch the object's fields first. The `filter=objectMetadataId[eq]:{objectId}` filter does not scope (returns a global union of every field in the workspace — see Step 2 above), so use the object-detail endpoint instead:
 
 ```http
-GET /rest/metadata/fields?filter=objectMetadataId[eq]:{objectId} HTTP/1.1
+GET /rest/metadata/objects/{objectId} HTTP/1.1
 ```
 
-Scan the response for the field by `name`, then copy its `id`.
+Read the embedded `fields[]` array (or use the `/metadata` GraphQL `fieldsList`), scan for the field by `name`, then copy its `id`.
 
 ### Response
 

@@ -23,6 +23,7 @@ description: Add and configure action steps on a Dalil AI workflow version — r
 - Variables are referenced inside `input` values as `{{stepId.path}}` or `{{trigger.path}}`
 - `nextStepIds` controls flow — one step points to the next via its UUID; for branching nodes (CONDITION) this is handled by `trueNextStepIds` / `falseNextStepIds` inside `settings.input`
 - `valid` should be set to `true` once required fields are filled; the system may also compute this
+- **Compute the output schema for every step whose output is referenced downstream, before wiring the consumer.** `computeStepOutputSchema` starts empty on every new step; without calling it (and writing the result back via `updateWorkflowVersionStep`) a later step's `{{stepId.*}}` expression resolves to an empty string at runtime, with no error. Returns `{}` for `HTTP_REQUEST`/`CODE` — those are populated only by a test execution. See "Wiring Steps Together" below for how this interacts with edges.
 
 ---
 
@@ -55,6 +56,8 @@ description: Add and configure action steps on a Dalil AI workflow version — r
 
 ### 1. Create the step (generates an ID, sets default settings)
 
+**Pass your own client-generated `id` to make builds deterministic.** `CreateWorkflowVersionStepInput` accepts an optional `id` (String — pass a UUID you generate yourself) and an optional `nextStepId` (UUID). This avoids parsing `stepsDiff` to recover the new step's UUID — generate it client-side and reuse it in the follow-up `updateWorkflowVersionStep` call.
+
 ```bash
 curl -s -X POST "https://app.usedalil.ai/graphql" \
   -H "Authorization: Bearer {apiKey}" \
@@ -63,16 +66,18 @@ curl -s -X POST "https://app.usedalil.ai/graphql" \
     "query": "mutation CreateWorkflowVersionStep($input: CreateWorkflowVersionStepInput!) { createWorkflowVersionStep(input: $input) { triggerDiff stepsDiff } }",
     "variables": {
       "input": {
+        "id": "your-client-generated-uuid",
         "workflowVersionId": "version-uuid",
         "stepType": "CREATE_RECORD",
         "parentStepId": "trigger",
+        "nextStepId": "optional-next-step-uuid",
         "position": { "x": 0, "y": 220 }
       }
     }
   }'
 ```
 
-`parentStepId` is `"trigger"` for the first step after the trigger, or the UUID of the preceding step.
+`parentStepId` is `"trigger"` for the first step after the trigger, or the UUID of the preceding step. If `id` is omitted, extract the new step's UUID from `stepsDiff` in the response instead.
 
 ### 2. Update the step with your configuration
 
@@ -108,6 +113,57 @@ curl -s -X POST "https://app.usedalil.ai/graphql" \
     }
   }'
 ```
+
+### 4. Delete a step or edge (cleanup)
+
+`deleteWorkflowVersionStep` takes `DeleteWorkflowVersionStepInput { workflowVersionId: UUID, stepId: String }` — note the field is **`stepId`, not `id`**:
+
+```bash
+curl -s -X POST "https://app.usedalil.ai/graphql" \
+  -H "Authorization: Bearer {apiKey}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation DeleteWorkflowVersionStep($input: DeleteWorkflowVersionStepInput!) { deleteWorkflowVersionStep(input: $input) { triggerDiff stepsDiff } }",
+    "variables": {
+      "input": {
+        "workflowVersionId": "version-uuid",
+        "stepId": "step-uuid-to-delete"
+      }
+    }
+  }'
+```
+
+`deleteWorkflowVersionEdge` reuses `CreateWorkflowVersionEdgeInput` (`source`/`target`):
+
+```bash
+curl -s -X POST "https://app.usedalil.ai/graphql" \
+  -H "Authorization: Bearer {apiKey}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation DeleteWorkflowVersionEdge($input: CreateWorkflowVersionEdgeInput!) { deleteWorkflowVersionEdge(input: $input) { triggerDiff stepsDiff } }",
+    "variables": {
+      "input": {
+        "workflowVersionId": "version-uuid",
+        "source": "source-step-uuid",
+        "target": "target-step-uuid"
+      }
+    }
+  }'
+```
+
+Use these to clean up CONDITION's and ITERATOR's auto-created placeholder children before wiring your own steps — see their sections below.
+
+---
+
+## Wiring Steps Together
+
+A step's `nextStepIds` array is the source of truth for what runs after it — setting it via `updateWorkflowVersionStep` (or `nextStepId` at create time, see B1 above) is what actually wires the flow. `createWorkflowVersionEdge` is a separate, additive mutation for connecting two existing steps without rewriting either step's full object.
+
+**Linear chain (1→1):** set `nextStepIds: ["{next-step-uuid}"]` on the upstream step via `updateWorkflowVersionStep`, or pass `nextStepId` at creation.
+
+**Fan-out (1→many, e.g. CONDITION):** handled by the branching step's own settings (`trueNextStepIds`/`falseNextStepIds` for CONDITION) rather than `nextStepIds` — `nextStepIds` should be `[]` on those steps.
+
+**Fan-in (many→1):** each of the upstream steps independently sets its own `nextStepIds` to point at the same shared downstream step UUID. There is no special "merge" step type — just have every branch's last step list the same `nextStepIds` target. Use `createWorkflowVersionEdge` as an additive way to add this connection if you don't want to re-send the full upstream step object via `updateWorkflowVersionStep` (which risks clearing other fields — see gotcha #2).
 
 ---
 
@@ -526,7 +582,7 @@ Same shape as SEND_WHATSAPP — `connectedAccountId`, `personId`, `message`.
 | `url` | string | Yes | Full URL — supports `{{...}}` variables |
 | `method` | string | Yes | `"GET"`, `"POST"`, `"PUT"`, `"PATCH"`, or `"DELETE"` |
 | `headers` | object | No | Key-value string pairs |
-| `body` | object \| string | No | JSON body (object) or raw string body — values support `{{...}}` variables |
+| `body` | object \| string | No | JSON body — both a JSON object (shown above) and a stringified JSON string have been observed in real exported steps (e.g. provider integrations like SmartLead use a stringified string). **Unconfirmed which form the engine expects in general — if a step's `body` fails to send correctly as an object, try a stringified JSON string instead.** `{{...}}` interpolation is supported as a substring inside string values either way. |
 
 Output: the full HTTP response body as JSON.
 
@@ -626,6 +682,8 @@ Evaluates filters and routes execution to either a `true` path or `false` path.
 | `falseNextStepIds` | string[] | Steps to run when condition does not match |
 
 Output: none (routing only).
+
+**Creating a CONDITION auto-spawns two placeholder branch steps.** Calling `createWorkflowVersionStep` with `stepType: "CONDITION"` creates not one but *three* steps — the CONDITION plus an EMPTY placeholder for each branch, already wired as `trueNextStepIds`/`falseNextStepIds`. Either reuse the two placeholders as your true/false targets, or delete them (`deleteWorkflowVersionStep`, see "How to Add a Step" step 4) before wiring your own steps.
 
 ---
 
@@ -1045,7 +1103,7 @@ curl -s -X POST "https://app.usedalil.ai/graphql" \
 
 ### ADD_PIPELINE_RECORD — Add a record to a pipeline
 
-Adds an existing record into a pipeline (creates a pipeline record entry). Uses the same input shape as `CREATE_RECORD`.
+Adds an existing record into a pipeline (creates a pipeline record entry). Input fields use `fieldsToCreate` (not `fieldsToUpdate`) alongside `objectRecord`, mirroring `CREATE_RECORD`'s shape.
 
 ```json
 {
@@ -1058,6 +1116,8 @@ Adds an existing record into a pipeline (creates a pipeline record entry). Uses 
   "settings": {
     "input": {
       "objectName": "opportunity",
+      "objectRecordId": "{{trigger.id}}",
+      "fieldsToCreate": ["stageId"],
       "objectRecord": {
         "name": "{{trigger.name}}",
         "stageId": "stage-uuid"
@@ -1071,6 +1131,8 @@ Adds an existing record into a pipeline (creates a pipeline record entry). Uses 
   }
 }
 ```
+
+**Important — the created pipeline record's `id` mirrors the parent record's `id`.** If you add `objectRecordId: "{{trigger.id}}"` (the parent person/company/opportunity record) to a pipeline, the resulting pipeline record's own `id` is the same UUID — not a newly generated one. This is how you re-find the pipeline record later via `FIND_PIPELINE_RECORDS` (filter `id == parent record's id`), without needing to capture this step's output.
 
 **Output:** Full created record — same as `CREATE_RECORD`.
 
@@ -1280,9 +1342,56 @@ Removes all pipeline records matching a filter. Same input shape as `BULK_DELETE
 
 ## AI / Enrichment Actions
 
-### ENRICH — AI-powered enrichment prompt
+### AI_CRM_AGENT — AI agent that reads/writes a CRM record
 
-Runs an AI prompt against data in the workflow. The `body` field is a freeform prompt string — it can contain `{{...}}` variable expressions to inject record data.
+An AI agent step that reads/writes a target CRM record, guided by a prompt. Reverse-engineered from exported workflows — two open questions are noted below, don't invent answers for them.
+
+```json
+{
+  "id": "step-uuid",
+  "name": "Qualify lead",
+  "type": "AI_CRM_AGENT",
+  "valid": true,
+  "position": { "x": 0, "y": 220 },
+  "nextStepIds": [],
+  "settings": {
+    "input": {
+      "main": { "id": "step-uuid", "type": "entity", "nameSingular": "person" },
+      "input": [
+        { "field-metadata-uuid": true }
+      ],
+      "prompt": "Review this person's recent activity and decide if they qualify as a warm lead.",
+      "recordId": "{{trigger.id}}",
+      "includeReason": true,
+      "businessContextDocumentIds": []
+    },
+    "outputSchema": {},
+    "errorHandlingOptions": {
+      "retryOnFailure": { "value": false },
+      "continueOnFailure": { "value": false }
+    }
+  }
+}
+```
+
+**`input` fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `main` | object | `{ id, type: "entity", nameSingular }` — the target object the agent operates on |
+| `input` | array | Per-field boolean maps keyed by `fieldMetadataId` — **unclear whether these gate read access, write access, or both; verify against a live run before relying on this to control writes** |
+| `prompt` | string | The instruction given to the agent; supports `{{...}}` variables |
+| `recordId` | string | UUID (or `{{...}}` expression) of the record the agent acts on |
+| `includeReason` | boolean | Whether the agent's reasoning is included in its output |
+| `businessContextDocumentIds` | string[] | IDs of business-context documents attached to the agent — **how these documents are created/managed is undocumented; confirm before depending on it** |
+
+---
+
+### ENRICH — AI-powered or provider-based enrichment
+
+ENRICH has **two distinct variants** depending on `input` shape — don't assume the freeform-prompt shape is the only one.
+
+**Variant A — freeform AI prompt.** Runs an AI prompt against data in the workflow. The `body` field is a freeform prompt string — it can contain `{{...}}` variable expressions to inject record data.
 
 ```json
 {
@@ -1305,13 +1414,50 @@ Runs an AI prompt against data in the workflow. The `body` field is a freeform p
 }
 ```
 
-**`input` fields:**
-
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `body` | string | Yes | The AI prompt text; supports `{{...}}` variable expressions |
 
-**Output:** Empty — ENRICH has no structured output schema. Results are applied externally.
+**Output:** Empty — this variant has no structured output schema. Results are applied externally.
+
+**Variant B — provider enrichment.** Calls a real data provider (LinkedIn, email finder, etc.) against a specific record, using a completely different `input` shape:
+
+```json
+{
+  "id": "step-uuid",
+  "name": "Enrich person via LinkedIn",
+  "type": "ENRICH",
+  "valid": true,
+  "position": { "x": 0, "y": 220 },
+  "nextStepIds": [],
+  "settings": {
+    "input": {
+      "operations": ["LINKEDIN_BASIC_DETAILS"],
+      "enrichOptions": {},
+      "selectedOptions": ["LINKEDIN_BASIC_DETAILS"],
+      "overwrite": false,
+      "objectRecordId": "{{trigger.id}}",
+      "objectNameSingular": "person"
+    },
+    "outputSchema": {},
+    "errorHandlingOptions": {
+      "retryOnFailure": { "value": false },
+      "continueOnFailure": { "value": false }
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `operations` | string[] | Provider operations to run, e.g. `LINKEDIN_BASIC_DETAILS`, `LINKEDIN_POSTS_PERSON`, `LINKEDIN_REACTIONS`, `EMAIL_FINDER` |
+| `enrichOptions` | object | Per-operation provider options |
+| `selectedOptions` | string[] | Which operations' results to apply |
+| `overwrite` | boolean | Whether to overwrite existing field values |
+| `objectRecordId` | string | UUID (or `{{...}}` expression) of the record to enrich |
+| `objectNameSingular` | string | Object type of the record being enriched |
+
+**Output:** Unlike Variant A, this variant **does** emit structured per-operation output — a downstream FILTER/CONDITION step can read `{{stepId.options.<opId>.success}}` (e.g. `{{enrichStepId.options.liBasicDetails.success}}`) to check whether a given operation succeeded.
 
 ---
 
@@ -1343,9 +1489,16 @@ A placeholder step that performs no action. Used to represent an unfinished bran
 
 ## Filter System (used in CONDITION, FILTER, FIND_RECORDS, BULK actions)
 
-Filters are expressed as a list of `stepFilters` grouped by `stepFilterGroups`.
+**There are two structurally different filter shapes — do not mix them up, since mixing silently produces a filter that never matches:**
 
-**Filter group:**
+| | FILTER / CONDITION | FIND_RECORDS / FIND_PIPELINE_RECORDS / BULK actions |
+|---|---|---|
+| Fields used | `stepFilters` + `stepFilterGroups` + `stepOutputKey` | `filter.recordFilters` + `recordFilterGroups` + `fieldMetadataId` |
+| What drives the match | `stepOutputKey` (a dot-path or `{{...}}` expression, depending on step type — see gotcha #17) | `fieldMetadataId` (the field's UUID) on the display filter, **plus a separate `gqlOperationFilter`** that is the filter actually executed (see below) |
+| Typical use | Gate the flow / route a branch based on a prior step's output | Query records from an object |
+
+### Filter group
+
 ```json
 {
   "id": "group-1",
@@ -1353,7 +1506,8 @@ Filters are expressed as a list of `stepFilters` grouped by `stepFilterGroups`.
 }
 ```
 
-**Filter condition:**
+### Filter condition (FILTER / CONDITION shape)
+
 ```json
 {
   "id": "filter-1",
@@ -1372,10 +1526,56 @@ Filters are expressed as a list of `stepFilters` grouped by `stepFilterGroups`.
 |---|---|
 | `stepOutputKey` | Dot-path to the value to test: `"trigger.fieldName"`, `"stepId.fieldName"`, `"currentItem.fieldName"` |
 | `operand` | Comparison operator — see table below |
-| `value` | The value to compare against (always a string, even for numbers) |
-| `filterValueMode` | `"fixed"` (literal) or `"expression"` (use `value` as a `{{...}}` variable path) |
+| `value` | The value to compare against (always a string, even for numbers — see SELECT/MULTI_SELECT and composite-field notes below) |
+| `filterValueMode` | `"fixed"` (literal) or `"VARIABLE"`/`"expression"` (use `value` as a `{{...}}` variable path) — required whenever `value` contains a `{{...}}` expression, or the literal string is used unresolved |
 
-**Operand values:**
+### `gqlOperationFilter` — required for FIND_RECORDS / FIND_PIPELINE_RECORDS / BULK actions
+
+`recordFilters` (shown in the FIND_RECORDS examples above) is the human-readable display filter. **It is not what actually executes the query.** Alongside it, the step also needs a `gqlOperationFilter` — a GraphQL-style filter object — which is the filter the engine actually runs. Omitting it (even with `recordFilters` correctly filled in) means the step does not filter as expected.
+
+**Worked example — find a record by id**, combining both:
+
+```json
+{
+  "objectName": "person",
+  "filter": {
+    "recordFilters": [
+      {
+        "id": "filter-1",
+        "type": "TEXT",
+        "stepOutputKey": "id",
+        "operand": "IS",
+        "value": "{{trigger.companyId}}",
+        "stepFilterGroupId": "group-1",
+        "fieldMetadataId": "id-field-uuid"
+      }
+    ],
+    "recordFilterGroups": [{ "id": "group-1", "logicalOperator": "AND" }],
+    "gqlOperationFilter": { "and": [{ "id": { "eq": "{{trigger.companyId}}" } }] }
+  }
+}
+```
+
+### SELECT / MULTI_SELECT filter values must be JSON-encoded array strings
+
+For SELECT/MULTI_SELECT fields, `value` is not a plain string — it is a **JSON-encoded array string**, e.g. `"[\"SALES_NAV\"]"`, even when filtering for a single option. Passing a plain string like `"SALES_NAV"` silently fails to match.
+
+### Composite sub-fields need `compositeFieldSubFieldName`
+
+To filter on a sub-field of a composite type (EMAILS, PHONES, LINKS, ADDRESS, CURRENCY, FULL_NAME), set `compositeFieldSubFieldName` on the filter to the sub-field name. Example — "is email empty?" on `emails.primaryEmail`:
+
+```json
+{
+  "id": "filter-1",
+  "fieldMetadataId": "emails-field-uuid",
+  "compositeFieldSubFieldName": "primaryEmail",
+  "operand": "IS_EMPTY",
+  "value": "",
+  "stepFilterGroupId": "group-1"
+}
+```
+
+### Operand values
 
 | Operand | Meaning |
 |---|---|
@@ -1392,6 +1592,8 @@ Filters are expressed as a list of `stepFilters` grouped by `stepFilterGroups`.
 | `IS_NOT_NULL` / `isNotNull` | Field is not null |
 | `IS_TODAY` / `isToday` | Date equals today |
 
+**Casing convention:** uppercase (`IS`, `CONTAINS`, `IS_EMPTY`, and `type: "SELECT"`) is the canonical form used by FILTER/CONDITION steps built through the standard flow. Lowercase forms (`is`, `contains`) and lowercase `type` values (e.g. `type: "boolean"`) do appear in some real exported steps (notably enrichment-success filters and some FIND `recordFilters`), and are accepted — but don't mix casing within the same workflow, and prefer uppercase for anything you build from scratch.
+
 ---
 
 ## Gotchas
@@ -1404,7 +1606,7 @@ Filters are expressed as a list of `stepFilters` grouped by `stepFilterGroups`.
 6. **ITERATOR's `items` can be a string expression** — Pass `"{{stepId.all}}"` as a string (not an array) to reference a previous step's output array.
 7. **Inside an ITERATOR loop, use `{{currentItem.*}}`** — The variable `currentItem` is only valid within steps that are `initialLoopStepIds` of the iterator. It does not exist outside the loop.
 8. **COMMENT nodes should not be connected to the flow** — Set `nextStepIds: []` and position them off to the side (negative x). Do not create an edge from a COMMENT node.
-9. **`operand` values have two forms** — Both `"CONTAINS"` (uppercase) and `"contains"` (camelCase) are valid. Use consistent casing within a workflow to avoid confusion.
+9. **`operand`/`type` casing — uppercase is canonical, lowercase appears in some real exports** — Use uppercase (`IS`, `CONTAINS`, `IS_EMPTY`, `type: "SELECT"`) for anything you build. Lowercase forms (`is`, `contains`, `type: "boolean"`) show up in some provider/enrichment-generated filters and are accepted there, but don't rely on lowercase outside those contexts, and never mix casing within one workflow.
 10. **DELAY with `SCHEDULED_DATE` expects an ISO datetime** — The `scheduledDateTime` value must be a full ISO 8601 string (e.g. `"2026-06-01T09:00:00.000Z"`). Use ADJUST_TIME to compute dynamic dates before passing them here.
 11. **FORM pauses execution until submitted** — The workflow run stays in `RUNNING` status until a user submits the form via the UI or the `submitFormStep` GraphQL mutation. Do not use FORM in fully automated flows.
 12. **`outputSchema` starts empty** — After creating a step, call `computeStepOutputSchema` (GraphQL) with the step object and version ID to populate it. Without this, downstream steps cannot reference this step's output in the variable picker.

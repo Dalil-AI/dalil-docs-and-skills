@@ -11,6 +11,7 @@ description: Discover the objects and fields available in a Dalil AI workspace �
 - **Main GraphQL endpoint:** `POST https://app.usedalil.ai/graphql` ← used for serverless functions
 - **REST endpoint:** `GET https://app.usedalil.ai/rest/{objectNamePlural}` ← used for connectedAccounts
 - **Auth:** `Authorization: Bearer {apiKey}`
+- See the `workflow` skill's "Endpoints & Hosts" table for the full picture across all four surfaces (including the separate `api.usedalil.ai/rest/metadata` host used by the `field`/`pipeline` skills).
 - **Why this matters:** Workflow actions (`workflow-actions` skill) require exact `objectName` values, `fieldMetadataId` UUIDs for filters, and `connectedAccountId` UUIDs for communication steps. All of these come from the metadata API.
 
 **Critical rules:**
